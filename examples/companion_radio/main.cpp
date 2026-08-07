@@ -1,6 +1,7 @@
 #include <Arduino.h>   // needed for PlatformIO
 #include <Mesh.h>
 #include "MyMesh.h"
+#include "ObserverBridge.h"
 
 #ifdef ESP32_PLATFORM
 #include "esp_pm.h"
@@ -236,6 +237,19 @@ void setup() {
 
   sensors.begin();
 
+#if defined(ESP32) && defined(WITH_MQTT_BRIDGE)
+  {
+    // WiFi association and broker connection are driven by the bridge from its
+    // own task, using credentials stored in /mqtt_prefs. A device with nothing
+    // configured yet still boots and works as a plain companion.
+    NodePrefs* np = the_mesh.getNodePrefs();
+    ObserverRadioInfo ri = { np->freq, np->bw, np->sf, np->cr };
+    ObserverBridge::begin(&board, &the_mesh, &radio_driver, the_mesh.getPacketManager(),
+                          &rtc_clock, &the_mesh.getSelfId(), &sensors, np->node_name, ri,
+                          FIRMWARE_VERSION, FIRMWARE_BUILD_DATE);
+  }
+#endif
+
 #if ENV_INCLUDE_GPS == 1
   the_mesh.applyGpsPrefs();
 #endif
@@ -295,6 +309,10 @@ void loop() {
     }
 #endif
   }
+
+#if defined(ESP32) && defined(WITH_MQTT_BRIDGE)
+  ObserverBridge::loop();
+#endif
 
 #if defined(ESP32) && defined(WIFI_SSID)
   // Safely attempt to reconnect every 10 seconds if flagged

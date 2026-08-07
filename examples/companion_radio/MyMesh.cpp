@@ -1,5 +1,7 @@
 #include "MyMesh.h"
 
+#include "ObserverBridge.h"
+
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
 
@@ -310,6 +312,20 @@ void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
 
     _serial->writeFrame(out_frame, i);
   }
+
+  // Stage the wire bytes for the MQTT observer uplink. Must stay immediately
+  // before the matching logRx() — the bridge holds one staged frame at a time.
+  ObserverBridge::onRxRaw(snr, rssi, raw, len);
+}
+
+void MyMesh::logRx(mesh::Packet* pkt, int len, float score) {
+  ObserverBridge::onRx(pkt);
+}
+
+void MyMesh::logTx(mesh::Packet* pkt, int len) {
+  // Uplink our own transmissions so this node is visible in the analyzer.
+  // The bridge applies the mqtt.tx mode (on / advert / off) itself.
+  ObserverBridge::onTx(pkt);
 }
 
 bool MyMesh::isAutoAddEnabled() const {
@@ -2081,6 +2097,10 @@ void MyMesh::checkCLIRescueCmd() {
   if (len > 0 && cli_command[len - 1] == '\r') {  // received complete line
     cli_command[len - 1] = 0;  // replace newline with C string null terminator
 
+    // Observer builds route set/get through the shared observer CLI, which owns
+    // wifi.*, mqtt*.* and timezone.*. Everything else stays as it was.
+    static char cli_reply[512];
+
     if (memcmp(cli_command, "set ", 4) == 0) {
       const char* config = &cli_command[4];
       if (memcmp(config, "pin ", 4) == 0) {
@@ -2088,7 +2108,19 @@ void MyMesh::checkCLIRescueCmd() {
         savePrefs();
         Serial.printf("  > pin is now %06d\n", _prefs.ble_pin);
       } else {
-        Serial.printf("  Error: unknown config: %s\n", config);
+        cli_reply[0] = 0;
+        if (ObserverBridge::handleCliLine(0, cli_command, cli_reply)) {
+          Serial.printf("  > %s\n", cli_reply);
+        } else {
+          Serial.printf("  Error: unknown config: %s\n", config);
+        }
+      }
+    } else if (memcmp(cli_command, "get ", 4) == 0) {
+      cli_reply[0] = 0;
+      if (ObserverBridge::handleCliLine(0, cli_command, cli_reply)) {
+        Serial.printf("  > %s\n", cli_reply);
+      } else {
+        Serial.printf("  Error: unknown config: %s\n", &cli_command[4]);
       }
     } else if (strcmp(cli_command, "rebuild") == 0) {
       bool success = _store->formatFileSystem();
@@ -2270,6 +2302,12 @@ void MyMesh::loop() {
     checkCLIRescueCmd();
   } else {
     checkSerialInterface();
+#ifdef WITH_MQTT_BRIDGE
+    // On the WiFi observer build the companion protocol runs over TCP:5000, so
+    // the USB console is free: keep the config CLI permanently available there
+    // rather than only in rescue mode.
+    checkCLIRescueCmd();
+#endif
   }
 
   // is there are pending dirty contacts write needed?

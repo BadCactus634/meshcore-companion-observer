@@ -95,6 +95,11 @@ public:
   NodePrefs *getNodePrefs();
   uint32_t getBLEPin();
 
+  // Exposed for ObserverBridge, which needs to hand these to MQTTBridge but
+  // cannot see the protected members from outside the class.
+  mesh::LocalIdentity& getSelfId() { return self_id; }
+  mesh::PacketManager* getPacketManager() { return _mgr; }
+
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
@@ -119,6 +124,11 @@ protected:
   void sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis=0) override;
 
   void logRxRaw(float snr, float rssi, const uint8_t raw[], int len) override;
+  // MQTT observer uplink: logRxRaw() stages the wire bytes, logRx() enqueues the
+  // parsed RX, logTx() enqueues our own transmissions. Order matters — see
+  // ObserverBridge.h.
+  void logRx(mesh::Packet* pkt, int len, float score) override;
+  void logTx(mesh::Packet* pkt, int len) override;
   bool isAutoAddEnabled() const override;
   bool shouldAutoAddContactType(uint8_t type) const override;
   bool shouldOverwriteWhenFull() const override;
