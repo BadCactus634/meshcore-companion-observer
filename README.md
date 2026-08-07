@@ -43,7 +43,7 @@ your own machine, and the node talks to it over your LAN.
 
 | | |
 |---|---|
-| **A board** | LilyGO T-Beam with SX1262 radio. Other ESP32 MeshCore boards need a small config addition — see [OBSERVER.md](OBSERVER.md). |
+| **A board** | LilyGO T-Beam with SX1262 radio. Any other **ESP32** MeshCore board works too — porting is one config block, no code changes, see [OBSERVER.md](OBSERVER.md#porting-to-another-board). nRF52 boards (T1000-E, Wio Tracker L1, T-Echo, RAK4631) have no WiFi and cannot run this. |
 | **WiFi** | The node stays on your home network and on USB power. |
 | **A computer that stays on** | To run the analyzer — a NAS, a mini PC, a Raspberry Pi, anything with Docker. |
 

@@ -29,12 +29,69 @@ pio run -e Tbeam_SX1262_companion_radio_wifi_mqtt
 pio run -t upload -e Tbeam_SX1262_companion_radio_wifi_mqtt
 ```
 
+A plain upload keeps the device's stored settings: every target on this board
+inherits `min_spiffs.csv` from the variant base, so the partition layout does not
+change and there is nothing to migrate.
+
+To wipe the chip completely first — bootloader, partition table, NVS and
+filesystem:
+
+```bash
+pio run -t erase  -e Tbeam_SX1262_companion_radio_wifi_mqtt
+pio run -t upload -e Tbeam_SX1262_companion_radio_wifi_mqtt
+```
+
+The upload rewrites bootloader, partition table, `boot_app0` and firmware, so a
+full erase is safe. **It also destroys the node's identity**: the private key
+lives in the filesystem, so the device generates a new one on next boot. Its
+public key changes, which means a new observer ID in the analyzer and contacts
+having to re-add it. Export the key from the phone app first if you want to keep
+it — `set prv.key` belongs to the repeater CLI and does nothing here, since
+`saveIdentity()` is a stub in the companion wiring.
+
+To clear only the stored configuration, without reflashing, use `rebuild`
+(reformat, then rewrite identity and prefs) or `erase` (reformat only) from the
+USB console.
+
 Board: LilyGO T-Beam with **SX1262** (ESP32 classic, 4 MB flash). The image uses
 the `min_spiffs.csv` partition table, giving a 1.875 MB app slot.
 
 There is also `Tbeam_SX1262_companion_radio_wifi` — the same companion over WiFi
 but without any MQTT — which upstream ships for the S3 Supreme but not for this
 board.
+
+### Porting to another board
+
+No C++ changes are involved. Everything board-specific — radio pins, LoRa chip,
+display class, power management — lives in the base section of that board's
+`variants/<board>/platformio.ini`. This work sits entirely at the role level, so
+porting means copying the `[env:Tbeam_SX1262_companion_radio_wifi_mqtt]` block
+into the other variant file and pointing `extends =` at that board's base.
+
+Many boards already ship a `companion_radio_wifi` env upstream — Heltec V3 and
+V4, Station G2 and G3, Xiao S3 WIO, T-Beam Supreme, T-Beam 1W, T-LoRa V2.1,
+Thinknode M2 and M5. For those, start from that env and add the MQTT lines:
+`WITH_MQTT_BRIDGE`, `MQTT_MAX_PACKET_SIZE`, `MAX_MQTT_BROKERS`, the cert-bundle
+`extra_scripts`/`embed_files`, `+<helpers/bridges/MQTTBridge.cpp>` in the source
+filter, and the five MQTT `lib_deps`.
+
+Three constraints actually differ between boards:
+
+**ESP32 only.** The bridge uses FreeRTOS queues, the ESP32 `WiFi.h` and
+PsychicMqttClient, which is ESP-IDF based. nRF52 boards (T1000-E, Wio Tracker L1,
+RAK4631, T-Echo) have no WiFi and cannot run this at all; the RP2040 targets are
+likewise out.
+
+**Flash budget.** The image is ~1.6 MB, which only matters on the 4 MB boards —
+T-Beam SX1262 and T3-S3 — and both already set `min_spiffs.csv` in their variant
+base, so nothing to add. Heltec V3 (`esp32-s3-devkitc-1`, 8 MB, `default_8MB.csv`)
+has a ~3.3 MB app slot; the 16 MB boards have far more.
+
+**PSRAM.** `MAX_MQTT_BROKERS=1` is a T-Beam limitation, not a general one: each
+TLS/WSS connection wants ~40 KB of contiguous internal heap and this board has no
+PSRAM, so a second concurrent slot fails. On T3-S3, Supreme or Xiao S3 raise it
+and publish to several brokers at once — a local CoreScope and a community broker,
+for instance.
 
 ## Configuration
 
