@@ -1,0 +1,73 @@
+# CoreScope — Portainer stack for a MeshCore companion observer.
+#
+# Portainer → Stacks → Add stack → Web editor → paste this → set the
+# environment variables below → Deploy.
+#
+# One container runs everything: the Mosquitto broker the node publishes to,
+# the Go ingestor that decodes packets, the API server and the web UI.
+#
+# Caddy (HTTPS) is disabled because this is meant to stay on your LAN. If you
+# ever expose it to the internet, set DISABLE_CADDY=false and mount a Caddyfile.
+#
+# Before the first deploy, create DATA_DIR on the host and put a config.json in
+# it — see the block at the bottom of this file. The container will not invent
+# one for you.
+
+services:
+  corescope:
+    image: ghcr.io/kpa-clawbot/corescope:latest
+    container_name: corescope
+    restart: unless-stopped
+    ports:
+      # Web UI. Use something above 1024 if your host already serves port 80.
+      - "${HTTP_PORT:-8080}:80"
+      # MQTT. The firmware connects here, so this one must be reachable from
+      # the LAN — this is the port that goes in `set mqtt1.server`.
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      # Holds config.json, the SQLite database and the theme. Back this up.
+      - ${DATA_DIR:-/opt/corescope/data}:/app/data
+    environment:
+      - DISABLE_CADDY=true
+      - DISABLE_MOSQUITTO=false
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# Environment variables to set in Portainer's stack editor:
+#
+#   DATA_DIR    /opt/corescope/data     host path, must exist
+#   HTTP_PORT   8080                    web UI
+#   MQTT_PORT   1883                    broker the node publishes to
+#
+# ---------------------------------------------------------------------------
+# $DATA_DIR/config.json — create before the first deploy:
+#
+# {
+#   "port": 3000,
+#   "mqtt": {
+#     "broker": "mqtt://localhost:1883",
+#     "topic": "meshcore/+/+/packets"
+#   },
+#   "channelKeys": {
+#     "public": "8b3387e9c5cdea6ac9e5edbaa115cd72"
+#   },
+#   "defaultRegion": "MXP"
+# }
+#
+# `mqtt.broker` is localhost because the broker lives in this same container.
+# `channelKeys` decides what gets decrypted: only channels whose key is listed
+# are readable, everything else stays metadata. The value above is MeshCore's
+# well-known public channel key. `defaultRegion` is the IATA code you also set
+# on the node with `set mqtt.iata`.
+#
+# ---------------------------------------------------------------------------
+# Matching firmware configuration, over the node's USB console at 115200 baud,
+# where 192.168.1.50 is the host running this stack:
+#
+#   set mqtt1.preset custom
+#   set mqtt1.server mqtt://192.168.1.50:1883
+#   set mqtt.iata MXP
+#   reboot
