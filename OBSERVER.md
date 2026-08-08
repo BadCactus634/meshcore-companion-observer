@@ -1,134 +1,107 @@
-# Companion Observer
+# Companion Observer — operator's guide
 
-A MeshCore companion that is also an MQTT observer. The phone app connects to it
-over WiFi exactly as it would to any companion radio, and at the same time every
-packet the radio hears — plus every packet it sends — is published to an MQTT
-broker, where [CoreScope](https://github.com/Kpa-clawbot/CoreScope) decodes it
-and serves a web UI (live feed, map, packet tracing, per-node analytics).
+How to build, flash, configure and verify this firmware. For what it is and how
+it works internally, see the [README](README.md).
 
-Existing MeshCore MQTT observers are all built on the repeater or room-server
-roles, so you cannot use them from the app. This target is the companion.
+Branch `companion-observer`, forked from `agessaman/mqtt-observer-plus` at
+**`f35341c`** — diff against that commit to see our changes.
 
-## Repo layout
-
-Three remotes, three roles:
-
-| Remote | Points at | Used for |
-|---|---|---|
-| `origin` | `BadCactus634/meshcore-companion-observer` | this fork, where the work is published |
-| `upstream` | `meshcore-dev/MeshCore` | the canonical firmware; base for rebases |
-| `agessaman` | `agessaman/MeshCore` | source of `MQTTBridge` and the observer CLI |
-
-Branch: `companion-observer`, forked from `agessaman/mqtt-observer-plus` at
-**`f35341c`**. Use that commit when diffing our changes against the fork.
-
-## Build
+## Build and flash
 
 ```bash
 pio run -e Tbeam_SX1262_companion_radio_wifi_mqtt
 pio run -t upload -e Tbeam_SX1262_companion_radio_wifi_mqtt
+pio device monitor -b 115200
 ```
 
-A plain upload keeps the device's stored settings: every target on this board
-inherits `min_spiffs.csv` from the variant base, so the partition layout does not
-change and there is nothing to migrate.
+Target board is the LilyGO T-Beam with **SX1262** (ESP32, 4 MB flash,
+`min_spiffs.csv`, 1.875 MB app slot). A plain upload keeps the device's stored
+settings — every target on this board inherits the same partition table, so
+there is nothing to migrate.
 
-To wipe the chip completely first — bootloader, partition table, NVS and
-filesystem:
+The variant also gained `Tbeam_SX1262_companion_radio_wifi`: the same WiFi
+companion without any MQTT. Upstream ships that env for the S3 Supreme but not
+for the classic T-Beam.
+
+### Flashing with a full erase
+
+Wipes bootloader, partition table, NVS and filesystem:
 
 ```bash
 pio run -t erase  -e Tbeam_SX1262_companion_radio_wifi_mqtt
 pio run -t upload -e Tbeam_SX1262_companion_radio_wifi_mqtt
 ```
 
-The upload rewrites bootloader, partition table, `boot_app0` and firmware, so a
-full erase is safe. **It also destroys the node's identity**: the private key
-lives in the filesystem, so the device generates a new one on next boot. Its
-public key changes, which means a new observer ID in the analyzer and contacts
-having to re-add it. Export the key from the phone app first if you want to keep
-it — `set prv.key` belongs to the repeater CLI and does nothing here, since
-`saveIdentity()` is a stub in the companion wiring.
+The upload rewrites bootloader, partition table, `boot_app0` and firmware, so
+this is safe — but **it destroys the node's identity**. The private key lives in
+the filesystem, so the device generates a new one on next boot: new public key,
+new observer ID in the analyzer, contacts have to re-add you. Export the key from
+the phone app first if you want to keep it. (`set prv.key` belongs to the
+repeater CLI and does nothing here — `saveIdentity()` is a stub in the companion
+wiring.)
 
 To clear only the stored configuration, without reflashing, use `rebuild`
 (reformat, then rewrite identity and prefs) or `erase` (reformat only) from the
 USB console.
 
-Board: LilyGO T-Beam with **SX1262** (ESP32 classic, 4 MB flash). The image uses
-the `min_spiffs.csv` partition table, giving a 1.875 MB app slot.
-
-There is also `Tbeam_SX1262_companion_radio_wifi` — the same companion over WiFi
-but without any MQTT — which upstream ships for the S3 Supreme but not for this
-board.
-
 ### Porting to another board
 
-No C++ changes are involved. Everything board-specific — radio pins, LoRa chip,
-display class, power management — lives in the base section of that board's
-`variants/<board>/platformio.ini`. This work sits entirely at the role level, so
-porting means copying the `[env:Tbeam_SX1262_companion_radio_wifi_mqtt]` block
-into the other variant file and pointing `extends =` at that board's base.
+No C++ changes. Everything board-specific — radio pins, LoRa chip, display, power
+management — lives in the base section of that board's
+`variants/<board>/platformio.ini`; this work sits at the role level. Copy the
+`[env:Tbeam_SX1262_companion_radio_wifi_mqtt]` block into the other variant file
+and point `extends =` at that board's base.
 
-Many boards already ship a `companion_radio_wifi` env upstream — Heltec V3 and
-V4, Station G2 and G3, Xiao S3 WIO, T-Beam Supreme, T-Beam 1W, T-LoRa V2.1,
-Thinknode M2 and M5. For those, start from that env and add the MQTT lines:
-`WITH_MQTT_BRIDGE`, `MQTT_MAX_PACKET_SIZE`, `MAX_MQTT_BROKERS`, the cert-bundle
+Many boards already ship a `companion_radio_wifi` env — Heltec V3 and V4, Station
+G2 and G3, Xiao S3 WIO, T-Beam Supreme, T-Beam 1W, T-LoRa V2.1, Thinknode M2 and
+M5. Start from that one and add the MQTT parts: `WITH_MQTT_BRIDGE`,
+`MQTT_MAX_PACKET_SIZE`, `MAX_MQTT_BROKERS`, the cert-bundle
 `extra_scripts`/`embed_files`, `+<helpers/bridges/MQTTBridge.cpp>` in the source
 filter, and the five MQTT `lib_deps`.
 
-Three constraints actually differ between boards:
+What genuinely differs per board:
 
-**ESP32 only.** The bridge uses FreeRTOS queues, the ESP32 `WiFi.h` and
-PsychicMqttClient, which is ESP-IDF based. nRF52 boards (T1000-E, Wio Tracker L1,
-RAK4631, T-Echo) have no WiFi and cannot run this at all; the RP2040 targets are
-likewise out.
-
-**Flash budget.** The image is ~1.6 MB, which only matters on the 4 MB boards —
-T-Beam SX1262 and T3-S3 — and both already set `min_spiffs.csv` in their variant
-base, so nothing to add. Heltec V3 (`esp32-s3-devkitc-1`, 8 MB, `default_8MB.csv`)
-has a ~3.3 MB app slot; the 16 MB boards have far more.
-
-**PSRAM.** `MAX_MQTT_BROKERS=1` is a T-Beam limitation, not a general one: each
-TLS/WSS connection wants ~40 KB of contiguous internal heap and this board has no
-PSRAM, so a second concurrent slot fails. On T3-S3, Supreme or Xiao S3 raise it
-and publish to several brokers at once — a local CoreScope and a community broker,
-for instance.
+- **ESP32 only.** The bridge needs FreeRTOS queues, the ESP32 `WiFi.h` and
+  PsychicMqttClient (ESP-IDF). nRF52 boards (T1000-E, Wio Tracker L1, RAK4631,
+  T-Echo) have no WiFi; RP2040 targets are out too.
+- **Flash.** The image is ~1.6 MB, which only matters on the 4 MB boards (T-Beam
+  SX1262, T3-S3) — and both already set `min_spiffs.csv` in their variant base.
+  Heltec V3 defaults to `default_8MB.csv` (~3.3 MB app slot); 16 MB boards have
+  far more.
+- **PSRAM.** `MAX_MQTT_BROKERS=1` is a T-Beam limitation: each TLS/WSS connection
+  wants ~40 KB of contiguous internal heap and this board has no PSRAM, so a
+  second concurrent slot fails (`mbedtls_ssl_setup`). Raise it on T3-S3, Supreme
+  or Xiao S3 to publish to several brokers at once.
 
 ## Configuration
 
-Nothing is compiled in: no SSID, no broker, no credentials live in the repo.
+Nothing is compiled in — no SSID, no broker, no credentials in the repo.
 Everything is set at runtime and stored in `/mqtt_prefs` on the device.
 
-In this build the companion protocol runs over TCP port 5000, which leaves the
-USB serial console free — that is where the config CLI lives. Open it at
-**115200 baud** and type commands followed by Enter.
+The companion protocol runs over TCP port 5000 in this build, which leaves the
+USB serial console free for the config CLI. Open it at **115200 baud**.
 
 ### Minimum to get running
 
-```bash
+```
 set wifi.ssid MyHomeNetwork
 set wifi.pwd  MyPassword
-set mqtt.iata MXP                    # any code; it is a topic segment + UI filter
-
+set mqtt.iata MXP                 # any code; a topic segment and a UI filter
 set mqtt1.preset custom
 set mqtt1.server mqtt://192.168.1.50:1883
 set timezone Europe/Rome
 reboot
 ```
 
-Then check:
+Then `get wifi.status` and `get mqtt.status` to check.
 
-```bash
-get wifi.status
-get mqtt.status
-```
-
-> The value of a `set` is everything after the first space — do **not** quote it.
-> Quotes are stored literally. For an open network: `set wifi.pwd ` with nothing
-> after the space.
+> A `set` value is everything after the first space — do **not** quote it, quotes
+> are stored literally. For an open network: `set wifi.pwd ` with nothing after
+> the space.
 
 ### TLS
 
-TLS is not an on/off switch — it follows the URL scheme in `mqttN.server`:
+Not a switch — it follows the URL scheme in `mqttN.server`:
 
 | Scheme | Transport | Certificates |
 |---|---|---|
@@ -137,28 +110,19 @@ TLS is not an on/off switch — it follows the URL scheme in `mqttN.server`:
 | `mqtts://host:8883` | MQTT over TLS | verified against the bundle |
 | `wss://host:443/mqtt` | WebSocket Secure | verified against the bundle |
 
-For a Mosquitto on your LAN, `mqtt://` is the right choice.
-
-`MAX_MQTT_BROKERS` is 1 in this target. The T-Beam has no PSRAM and each TLS/WSS
-connection needs ~40 KB of contiguous internal heap, so a second concurrent TLS
-slot is known to fail (`mbedtls_ssl_setup`).
+For a broker on your own LAN, `mqtt://` is the right choice.
 
 ### Publishing this node's own transmissions
 
-On by default, restricted to self-originated adverts:
-
-```bash
+```
 set mqtt.tx advert     # default: only our own adverts
 set mqtt.tx on         # everything this node transmits
 set mqtt.tx off        # nothing
 ```
 
-TX packets have no raw bytes off the radio, so the bridge re-serialises them —
-the `raw` field reaches the analyzer for TX exactly as it does for RX.
+### Other commands
 
-### Other useful commands
-
-```bash
+```
 set mqtt.origin <name>          set mqtt.rx on|off
 set mqtt.packets on|off         set mqtt.raw on|off
 set mqtt.interval <minutes>     set mqtt.ntp <hostname>
@@ -167,101 +131,46 @@ set mqtt1.topic <template>      get mqtt.presets
 ```
 
 Topic template placeholders: `{iata}`, `{device}`, `{token}`, `{type}`. Custom
-slots default to `meshcore/{iata}/{device}/{type}`, which is already the layout
-CoreScope subscribes to (`meshcore/+/+/packets`).
+slots default to `meshcore/{iata}/{device}/{type}`.
 
-The observer CLI is shared with the repeater firmware, so it also accepts
+This CLI is shared with the repeater firmware, so it also accepts
 repeater-oriented commands. Those that make no sense on a companion answer
 `Not supported` — the companion's own settings belong to the phone app.
 
 ## Analyzer
 
-```bash
-docker run -d --name corescope --restart=unless-stopped \
-  -p 8080:80 -p 1883:1883 \
-  -v /path/to/data:/app/data \
-  ghcr.io/kpa-clawbot/corescope:latest
-```
+Install and configure your analyzer from its own documentation —
+[CoreScope](https://github.com/Kpa-clawbot/CoreScope) is the one this was built
+against. The only thing that has to line up on both sides is the topic: the
+default `meshcore/{iata}/{device}/{type}` is already what CoreScope subscribes to
+(`meshcore/+/+/packets`), and it is the format `meshcoretomqtt` produces, so
+other consumers of that feed work too.
 
-`config.json`:
+[`deploy/corescope-portainer-stack.yml`](deploy/corescope-portainer-stack.yml) is
+a ready-made Portainer stack if you want one — it publishes the MQTT port (the
+upstream example does not) and turns off HTTPS, since it is meant to stay on the
+LAN.
 
-```json
-{
-  "port": 3000,
-  "mqtt": { "broker": "mqtt://localhost:1883", "topic": "meshcore/+/+/packets" },
-  "channelKeys": { "public": "8b3387e9c5cdea6ac9e5edbaa115cd72" },
-  "defaultRegion": "MXP"
-}
-```
+## Verifying a new install
 
-CoreScope only decrypts channels whose key is listed in `channelKeys`; everything
-else stays as metadata (type, path, SNR, hash, routing). Direct messages are
-never readable.
-
-## How it works
-
-Three virtual hooks on `Dispatcher` carry packets to the bridge. The companion's
-`MyMesh` overrides all three:
-
-| Hook | Bridge call | Purpose |
-|---|---|---|
-| `logRxRaw(snr, rssi, raw, len)` | `storeRawRadioData(raw, len, snr, rssi)` | stage the wire bytes |
-| `logRx(pkt, len, score)` | `onPacketReceived(pkt)` | enqueue RX, consuming the staged bytes |
-| `logTx(pkt, len)` | `sendPacket(pkt)` | enqueue TX |
-
-Two things are easy to get wrong here. The argument order differs between the
-hook and the bridge call. And the staging slot holds exactly one frame: it is
-written on Core 1 and consumed by the next enqueue on the same core, with no
-mutex, so `logRxRaw` must stay immediately before its matching `logRx`.
-
-Publishing never happens on the radio path — the bridge hands packets to a
-FreeRTOS queue drained by its own task, so a slow broker cannot disturb CAD or
-TX scheduling.
-
-### Why `ObserverBridge` exists
-
-`struct NodePrefs` is declared twice in the tree with different layouts, once in
-`helpers/CommonCLI.h` (repeater, room server) and once in
-`examples/companion_radio/NodePrefs.h`. `MQTTBridge.h` reaches the first through
-`BridgeBase.h`, so a companion file that included `MQTTBridge.h` would not
-compile.
-
-`ObserverBridge.cpp` is the only companion file that includes `CommonCLI.h` and
-`MQTTBridge.h`, and it never includes the companion's `NodePrefs.h`. The header
-exposes static functions and a plain `ObserverRadioInfo { freq, bw, sf, cr }`, so
-`MyMesh.cpp` and `main.cpp` never see both structs at once. The bridge reads only
-five fields off the repeater-side struct, which `ObserverBridge` keeps in sync.
-
-## Fixes carried on top of the fork
-
-Two defects in `agessaman/mqtt-observer-plus` blocked every companion target:
-
-- `MyMesh::getCADEnabled()` was defined twice in `companion_radio/MyMesh.cpp`
-  (bad merge).
-- `arduino_base` globs `helpers/*.cpp`, which pulls in `MQTTMessageBuilder.cpp`.
-  It has no `WITH_MQTT_BRIDGE` guard and hard-includes `<Timezone.h>`, so any
-  target without that `lib_dep` fails to compile.
-
-## Status
-
-Builds clean. **Not yet verified on hardware** — see the checklist below.
+Builds clean; **not yet verified on hardware**.
 
 1. Flash, open the console at 115200, run the configuration above.
 2. `get wifi.status` reports an IP.
 3. `mosquitto_sub -h <broker> -t 'meshcore/#' -v` shows one message per heard
    packet, with a populated `raw` field.
-4. CoreScope lists the observer under `/api/observers`; no decode errors in the
-   ingestor log (those would mean malformed hex).
+4. The analyzer lists the observer, with no decode errors in its ingestor log
+   (those would mean malformed hex).
 5. The phone app connects to `<device-ip>:5000` and works normally — contacts,
    messages, channels — while MQTT keeps publishing.
-6. Trigger an advert and confirm this node appears in CoreScope.
-7. Leave it running 24h: no watchdog reboots, no clock-skew warnings in the UI.
+6. Trigger an advert and confirm this node appears in the analyzer.
+7. Leave it running 24h: no watchdog reboots, no clock-skew warnings.
 
 ## Known limits
 
-- **WiFi means no BLE.** Upstream selects one companion transport at compile time
-  (`#ifdef WIFI_SSID / #elif BLE_PIN_CODE` in `main.cpp`). Away from the WiFi
-  network, the app cannot reach the node.
+- **WiFi means no BLE.** Upstream picks one companion transport at compile time
+  (`#ifdef WIFI_SSID / #elif BLE_PIN_CODE` in `main.cpp`). Off the WiFi network,
+  the app cannot reach the node.
 - **A companion does not repeat.** It observes; it does not extend coverage.
 - **One node hears one place.** Real coverage needs several observers on the same
   broker.
