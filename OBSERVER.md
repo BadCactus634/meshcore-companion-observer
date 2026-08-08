@@ -1,10 +1,10 @@
-# Companion Observer — operator's guide
+# Companion Observer - operator's guide
 
 How to build, flash, configure and verify this firmware. For what it is and how
 it works internally, see the [README](README.md).
 
 Branch `companion-observer`, forked from `agessaman/mqtt-observer-plus` at
-**`f35341c`** — diff against that commit to see our changes.
+**`f35341c`** - diff against that commit to see our changes.
 
 ## Build and flash
 
@@ -16,7 +16,7 @@ pio device monitor -b 115200
 
 Target board is the LilyGO T-Beam with **SX1262** (ESP32, 4 MB flash,
 `min_spiffs.csv`, 1.875 MB app slot). A plain upload keeps the device's stored
-settings — every target on this board inherits the same partition table, so
+settings - every target on this board inherits the same partition table, so
 there is nothing to migrate.
 
 The variant also gained `Tbeam_SX1262_companion_radio_wifi`: the same WiFi
@@ -33,11 +33,11 @@ pio run -t upload -e Tbeam_SX1262_companion_radio_wifi_mqtt
 ```
 
 The upload rewrites bootloader, partition table, `boot_app0` and firmware, so
-this is safe — but **it destroys the node's identity**. The private key lives in
+this is safe - but **it destroys the node's identity**. The private key lives in
 the filesystem, so the device generates a new one on next boot: new public key,
 new observer ID in the analyzer, contacts have to re-add you. Export the key from
 the phone app first if you want to keep it. (`set prv.key` belongs to the
-repeater CLI and does nothing here — `saveIdentity()` is a stub in the companion
+repeater CLI and does nothing here - `saveIdentity()` is a stub in the companion
 wiring.)
 
 To clear only the stored configuration, without reflashing, use `rebuild`
@@ -46,13 +46,13 @@ USB console.
 
 ### Porting to another board
 
-No C++ changes. Everything board-specific — radio pins, LoRa chip, display, power
-management — lives in the base section of that board's
+No C++ changes. Everything board-specific - radio pins, LoRa chip, display, power
+management - lives in the base section of that board's
 `variants/<board>/platformio.ini`; this work sits at the role level. Copy the
 `[env:Tbeam_SX1262_companion_radio_wifi_mqtt]` block into the other variant file
 and point `extends =` at that board's base.
 
-Many boards already ship a `companion_radio_wifi` env — Heltec V3 and V4, Station
+Many boards already ship a `companion_radio_wifi` env - Heltec V3 and V4, Station
 G2 and G3, Xiao S3 WIO, T-Beam Supreme, T-Beam 1W, T-LoRa V2.1, Thinknode M2 and
 M5. Start from that one and add the MQTT parts: `WITH_MQTT_BRIDGE`,
 `MQTT_MAX_PACKET_SIZE`, `MAX_MQTT_BROKERS`, the cert-bundle
@@ -65,7 +65,7 @@ What genuinely differs per board:
   PsychicMqttClient (ESP-IDF). nRF52 boards (T1000-E, Wio Tracker L1, RAK4631,
   T-Echo) have no WiFi; RP2040 targets are out too.
 - **Flash.** The image is ~1.6 MB, which only matters on the 4 MB boards (T-Beam
-  SX1262, T3-S3) — and both already set `min_spiffs.csv` in their variant base.
+  SX1262, T3-S3) - and both already set `min_spiffs.csv` in their variant base.
   Heltec V3 defaults to `default_8MB.csv` (~3.3 MB app slot); 16 MB boards have
   far more.
 - **PSRAM.** `MAX_MQTT_BROKERS=1` is a T-Beam limitation: each TLS/WSS connection
@@ -75,7 +75,7 @@ What genuinely differs per board:
 
 ## Configuration
 
-Nothing is compiled in — no SSID, no broker, no credentials in the repo.
+Nothing is compiled in - no SSID, no broker, no credentials in the repo.
 Everything is set at runtime and stored in `/mqtt_prefs` on the device.
 
 The companion protocol runs over TCP port 5000 in this build, which leaves the
@@ -95,13 +95,29 @@ reboot
 
 Then `get wifi.status` and `get mqtt.status` to check.
 
-> A `set` value is everything after the first space — do **not** quote it, quotes
+> A `set` value is everything after the first space - do **not** quote it, quotes
 > are stored literally. For an open network: `set wifi.pwd ` with nothing after
 > the space.
 
+### Which IATA code?
+
+`mqtt.iata` is the three-letter **IATA airport code** of the large airport
+nearest your node - the convention observers use to group a region. It is only a
+topic segment and a filter in the analyzer's UI, so it does not have to be exact;
+it just has to match what other observers in your area use, and what you put in
+the analyzer's `defaultRegion`.
+
+Look yours up on [Wikipedia's IATA airport code index](https://en.wikipedia.org/wiki/IATA_airport_code)
+or IATA's own code search - or simply search "*your city* airport IATA code".
+Milan Malpensa is `MXP`, Rome Fiumicino `FCO`, Bologna `BLQ`.
+
+The value is stored uppercase automatically. Leaving it empty or setting it to
+`XXX` means "not configured": the firmware treats that as unset and will not
+publish until you give it a real code.
+
 ### TLS
 
-Not a switch — it follows the URL scheme in `mqttN.server`:
+Not a switch - it follows the URL scheme in `mqttN.server`:
 
 | Scheme | Transport | Certificates |
 |---|---|---|
@@ -135,11 +151,11 @@ slots default to `meshcore/{iata}/{device}/{type}`.
 
 This CLI is shared with the repeater firmware, so it also accepts
 repeater-oriented commands. Those that make no sense on a companion answer
-`Not supported` — the companion's own settings belong to the phone app.
+`Not supported` - the companion's own settings belong to the phone app.
 
 ## Analyzer
 
-Install and configure your analyzer from its own documentation —
+Install and configure your analyzer from its own documentation -
 [CoreScope](https://github.com/Kpa-clawbot/CoreScope) is the one this was built
 against. The only thing that has to line up on both sides is the topic: the
 default `meshcore/{iata}/{device}/{type}` is already what CoreScope subscribes to
@@ -147,7 +163,7 @@ default `meshcore/{iata}/{device}/{type}` is already what CoreScope subscribes t
 other consumers of that feed work too.
 
 [`deploy/corescope-portainer-stack.yml`](deploy/corescope-portainer-stack.yml) is
-a ready-made Portainer stack if you want one — it publishes the MQTT port (the
+a ready-made Portainer stack if you want one - it publishes the MQTT port (the
 upstream example does not) and turns off HTTPS, since it is meant to stay on the
 LAN.
 
@@ -161,8 +177,8 @@ Builds clean; **not yet verified on hardware**.
    packet, with a populated `raw` field.
 4. The analyzer lists the observer, with no decode errors in its ingestor log
    (those would mean malformed hex).
-5. The phone app connects to `<device-ip>:5000` and works normally — contacts,
-   messages, channels — while MQTT keeps publishing.
+5. The phone app connects to `<device-ip>:5000` and works normally - contacts,
+   messages, channels - while MQTT keeps publishing.
 6. Trigger an advert and confirm this node appears in the analyzer.
 7. Leave it running 24h: no watchdog reboots, no clock-skew warnings.
 
