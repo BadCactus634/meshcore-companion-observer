@@ -1,4 +1,4 @@
-# MeshCore Companion Observer - without Raspberry
+# MeshCore Companion Observer - standalone, no Raspberry Pi
 
 A custom [MeshCore](https://meshcore.co.uk/) firmware for ESP32 LoRa boards that
 does two jobs at once: it is a **normal companion radio** you connect to from the
@@ -6,7 +6,6 @@ MeshCore phone app over your home WiFi, **and** an **observer node** that record
 every packet it hears (and every packet it sends) to an MQTT broker, where a
 web dashboard turns it into a live map, a searchable packet feed and per-node
 statistics.
-This firmware also removes the need for a Raspberry Pi permanently connected to your observer node, because this firmware does all the job itself.
 
 If you know Meshtastic, this firmware can be used to populate CoreScope (the MeshCore equivalent of Malla).
 
@@ -15,28 +14,48 @@ If you know Meshtastic, this firmware can be used to populate CoreScope (the Mes
 ## What problem does this solve?
 
 MeshCore firmware comes in a few flavours (companion, repeater and room server).
+Turning a node into an *observer* — one that reports mesh traffic for analysis —
+normally costs you two things. This firmware costs you neither.
 
-People who want to *analyse* their mesh have to flash an observer firmware. Nearly
-all of them are built on the repeater or room-server role, which turns the node
-into infrastructure: **you can no longer use it from your phone.** So you need two
-devices, or you give up one for the other.
+### You keep using the node from your phone
 
-This firmware removes that trade-off:
+Nearly every observer firmware is built on the repeater or room-server role,
+which turns the node into infrastructure: **you can no longer use it from your
+phone.** So you need two devices, or you give up one for the other.
 
-- Your phone connects to it over WiFi and it behaves like any other companion -
-  contacts, direct messages, channels, everything.
-- At the same time it quietly reports what it hears to your own server, so you
-  get the maps and statistics too.
+Here the node stays a companion. Your phone connects to it over WiFi and it
+behaves like any other companion radio — contacts, direct messages, channels,
+everything — while it quietly reports what it hears in the background.
 
-Nothing leaves your house unless you tell it to: the analyzer runs in Docker on
-your own machine, and the node talks to it over your LAN.
+### No computer attached to the radio
+
+The usual observer setup is a chain: the node is flashed with packet logging,
+a **USB cable** runs from it to a Raspberry Pi or a mini PC, and a Python bridge
+(`meshcoretomqtt`) on that machine reads the serial output and forwards it to
+MQTT. The radio has to live wherever the computer is, and if the computer sleeps,
+reboots or the cable is knocked out, you stop collecting.
+
+This firmware does that job itself. It joins your WiFi and talks MQTT directly,
+so the node needs **nothing but a USB power supply** — a phone charger in the
+attic, by a window, in the garden, wherever the antenna does best. No cable to a
+computer, no Python, no Raspberry Pi.
+
+You still need somewhere to run the dashboard that *displays* the data, but that
+is any machine on your network — a NAS, a mini PC, the computer you already
+have — and it does not have to be anywhere near the radio. It can even be
+somewhere else entirely, or you can publish to one of the public community
+brokers and run nothing at all.
+
+Nothing leaves your house unless you choose it to: point the node at your own
+broker and the data stays on your LAN.
 
 ## What you need
 
 | | |
 |---|---|
-| **A board** | Any **ESP32** board supported by the official MeshCore firmware - porting is one config block, no code changes, see [OBSERVER.md](OBSERVER.md#porting-to-another-board). nRF52 boards (T1000-E, Wio Tracker L1, T-Echo, RAK4631) have no WiFi and so cannot run this. |
-| **WiFi** | The node needs to be connected to the Internet via a WiFi connection. |
+| **A board** | Ready-made targets for **LilyGO T-Beam SX1262**, **Heltec WiFi LoRa 32 V3** and **LilyGO T3-S3**. Any other **ESP32** MeshCore board is one config block away, no code changes — see [OBSERVER.md](OBSERVER.md#porting-to-another-board). nRF52 boards (T1000-E, Wio Tracker L1, T-Echo, RAK4631) have no WiFi and cannot run this. |
+| **WiFi and USB power** | That is the whole hardware requirement for the node itself. |
+| **Somewhere to run the dashboard** | Any machine on your network with Docker. Not attached to the radio, and not needed at all if you publish to a public broker. |
 
 ## How it fits together
 
@@ -151,6 +170,10 @@ TCP, which frees the USB console for the shared observer CLI (`set wifi.ssid`,
 `set mqtt1.server`, `get mqtt.status`, …). Repeater-oriented commands that reach
 the same CLI answer `Not supported`.
 
+**Uplink status on the display.** Boards with a screen show one line carrying the
+IP address and the number of connected brokers, so the uplink can be checked
+without a serial cable. Borrowed from Dreikor17's project, credited above.
+
 **Two upstream-fork defects fixed**, both of which broke *every* companion target
 in `mqtt-observer-plus`:
 
@@ -161,19 +184,35 @@ in `mqtt-observer-plus`:
 
 ## Build targets
 
-`variants/lilygo_tbeam_SX1262/platformio.ini`:
+Three ready-made observer targets, all built and measured:
 
-| Environment | Flash | App slot used |
-|---|---|---|
-| `Tbeam_SX1262_companion_radio_wifi` | 1 244 097 B | 63.3 % |
-| `Tbeam_SX1262_companion_radio_wifi_mqtt` | 1 600 849 B | 81.4 % |
+| Environment | Board | Flash | App slot | Used |
+|---|---|---|---|---|
+| `Tbeam_SX1262_companion_radio_wifi_mqtt` | T-Beam SX1262 | 1 601 065 B | 1.875 MB | 81.4 % |
+| `Heltec_v3_companion_radio_wifi_mqtt` | Heltec WiFi LoRa 32 V3 | 1 438 881 B | 3.19 MB | 43.1 % |
+| `LilyGo_T3S3_companion_radio_wifi_mqtt` | LilyGO T3-S3 | 1 371 709 B | 1.875 MB | 69.8 % |
 
-Both use `min_spiffs.csv` (1.875 MB app slot) on this 4 MB board. The plain WiFi
-companion target is also new - upstream ships one for the S3 Supreme but not for
-the classic T-Beam.
+The T-Beam image is the largest because that variant also pulls in XPowersLib and
+MicroNMEA for its PMU and GPS.
 
-`MAX_MQTT_BROKERS` is 1: the board has no PSRAM and each TLS/WSS connection needs
-roughly 40 KB of contiguous internal heap, so a second concurrent TLS slot fails.
+Two details worth knowing if you add a target of your own:
+
+- **T3-S3 needs an explicit partition override.** `boards/t3_s3_v1_x.json`
+  defaults to `default.csv`, a 1.25 MB app slot this image does not fit in, so
+  the env sets `min_spiffs.csv`. The T-Beam gets the same table from its variant
+  base; the Heltec V3 has 8 MB and needs nothing.
+- **Keep env names short on Windows.** PlatformIO unpacks RadioLib's examples
+  under `.pio/libdeps/<env-name>/`, and with a deep project directory a long name
+  pushes those paths past `MAX_PATH`, leaving the library installer looping on
+  "cannot find the path specified". That is why the T3-S3 env drops the `sx1262`
+  infix its siblings carry.
+
+`MAX_MQTT_BROKERS` is 1 on the T-Beam, which has no PSRAM: each TLS/WSS
+connection needs roughly 40 KB of contiguous internal heap, so a second
+concurrent slot fails. The T3-S3 has PSRAM and is set to 2.
+
+There is also `Tbeam_SX1262_companion_radio_wifi` - a plain WiFi companion with
+no MQTT, which upstream ships for the S3 Supreme but not for the classic T-Beam.
 
 ## Status
 

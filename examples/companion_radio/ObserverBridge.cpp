@@ -176,6 +176,20 @@ void ObserverBridge::onTx(mesh::Packet* pkt) {
   if (s_bridge) s_bridge->sendPacket(pkt);
 }
 
+void ObserverBridge::getStatusLine(char* buf, size_t buf_size) {
+  if (buf == nullptr || buf_size == 0) return;
+  if (!s_bridge) {
+    strncpy(buf, "MQTT: off", buf_size);
+  } else if (WiFi.status() != WL_CONNECTED) {
+    strncpy(buf, "WiFi: connecting", buf_size);
+  } else {
+    IPAddress ip = WiFi.localIP();
+    snprintf(buf, buf_size, "%u.%u.%u.%u  MQTT:%d",
+             ip[0], ip[1], ip[2], ip[3], s_bridge->getConnectedBrokers());
+  }
+  buf[buf_size - 1] = 0;   // strncpy does not terminate on truncation
+}
+
 bool ObserverBridge::handleCliLine(uint32_t sender_timestamp, char* line, char* reply) {
   if (!s_cli) return false;
   s_cli->handleCommand(sender_timestamp, line, reply);
@@ -193,6 +207,9 @@ void ObserverBridge::setNodeName(const char*) { }
 void ObserverBridge::onRxRaw(float, float, const uint8_t[], int) { }
 void ObserverBridge::onRx(mesh::Packet*) { }
 void ObserverBridge::onTx(mesh::Packet*) { }
+void ObserverBridge::getStatusLine(char* buf, size_t buf_size) {
+  if (buf && buf_size) buf[0] = 0;
+}
 bool ObserverBridge::handleCliLine(uint32_t, char*, char*) { return false; }
 
 #endif

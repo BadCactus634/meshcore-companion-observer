@@ -76,6 +76,16 @@ public:
    */
   static void onTx(mesh::Packet* pkt);
 
+  /**
+   * One-line uplink status for the device display:
+   *   "MQTT: off"         bridge never started
+   *   "WiFi: connecting"  associating, no IP yet
+   *   "<ip>  MQTT:<n>"    associated; n = brokers currently connected
+   *
+   * Approach borrowed from Dreikor17/MeshCore-Observer-Companion.
+   */
+  static void getStatusLine(char* buf, size_t buf_size);
+
   /* ---- serial console ---- */
 
   /**

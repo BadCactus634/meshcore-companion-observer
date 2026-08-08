@@ -8,20 +8,31 @@ Branch `companion-observer`, forked from `agessaman/mqtt-observer-plus` at
 
 ## Build and flash
 
+Pick the target for your board:
+
+| Board | Environment | Flash used |
+|---|---|---|
+| LilyGO T-Beam SX1262 | `Tbeam_SX1262_companion_radio_wifi_mqtt` | 81.4 % of 1.875 MB |
+| Heltec WiFi LoRa 32 V3 | `Heltec_v3_companion_radio_wifi_mqtt` | 43.1 % of 3.19 MB |
+| LilyGO T3-S3 | `LilyGo_T3S3_companion_radio_wifi_mqtt` | 69.8 % of 1.875 MB |
+
 ```bash
-pio run -e Tbeam_SX1262_companion_radio_wifi_mqtt
-pio run -t upload -e Tbeam_SX1262_companion_radio_wifi_mqtt
+pio run -e <environment>
+pio run -t upload -e <environment>
 pio device monitor -b 115200
 ```
 
-Target board is the LilyGO T-Beam with **SX1262** (ESP32, 4 MB flash,
-`min_spiffs.csv`, 1.875 MB app slot). A plain upload keeps the device's stored
-settings - every target on this board inherits the same partition table, so
+A plain upload keeps the device's stored settings — none of these targets change
+the partition layout relative to the other MeshCore builds for the same board, so
 there is nothing to migrate.
 
-The variant also gained `Tbeam_SX1262_companion_radio_wifi`: the same WiFi
+The T-Beam variant also gained `Tbeam_SX1262_companion_radio_wifi`: the same WiFi
 companion without any MQTT. Upstream ships that env for the S3 Supreme but not
 for the classic T-Beam.
+
+On boards with a display, one line shows the uplink state — `MQTT: off`,
+`WiFi: connecting`, or the IP address followed by the number of connected
+brokers — so you can check it without plugging in a serial cable.
 
 ### Flashing with a full erase
 
@@ -48,9 +59,22 @@ USB console.
 
 No C++ changes. Everything board-specific - radio pins, LoRa chip, display, power
 management - lives in the base section of that board's
-`variants/<board>/platformio.ini`; this work sits at the role level. Copy the
-`[env:Tbeam_SX1262_companion_radio_wifi_mqtt]` block into the other variant file
-and point `extends =` at that board's base.
+`variants/<board>/platformio.ini`; this work sits at the role level. Copy one of
+the three env blocks above into the other variant file and point `extends =` at
+that board's base.
+
+Two traps the three existing targets already show:
+
+- **Check the partition table.** The T3-S3 env has to set
+  `board_build.partitions = min_spiffs.csv` because `boards/t3_s3_v1_x.json`
+  defaults to `default.csv` — a 1.25 MB app slot the image does not fit in. The
+  T-Beam inherits `min_spiffs` from its variant base; the Heltec V3 has 8 MB and
+  needs nothing.
+- **Keep the env name short on Windows.** PlatformIO unpacks RadioLib's examples
+  under `.pio/libdeps/<env-name>/`. With a deep project directory a long name
+  pushes those paths past `MAX_PATH`, and the library installer loops forever on
+  "cannot find the path specified" instead of failing usefully. That is why the
+  T3-S3 env drops the `sx1262` infix its sibling targets carry.
 
 Many boards already ship a `companion_radio_wifi` env - Heltec V3 and V4, Station
 G2 and G3, Xiao S3 WIO, T-Beam Supreme, T-Beam 1W, T-LoRa V2.1, Thinknode M2 and
