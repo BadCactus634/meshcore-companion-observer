@@ -1,4 +1,4 @@
-# MeshCore Companion Observer - use your node *and* analyse the mesh
+# MeshCore Companion Observer - without Raspberry
 
 A custom [MeshCore](https://meshcore.co.uk/) firmware for ESP32 LoRa boards that
 does two jobs at once: it is a **normal companion radio** you connect to from the
@@ -6,6 +6,7 @@ MeshCore phone app over your home WiFi, **and** an **observer node** that record
 every packet it hears (and every packet it sends) to an MQTT broker, where a
 web dashboard turns it into a live map, a searchable packet feed and per-node
 statistics.
+This firmware also removes the need for a Raspberry Pi permanently connected to your observer node, because this firmware does all the job itself.
 
 If you know Meshtastic, this firmware can be used to populate CoreScope (the MeshCore equivalent of Malla).
 
@@ -15,11 +16,10 @@ If you know Meshtastic, this firmware can be used to populate CoreScope (the Mes
 
 MeshCore firmware comes in a few flavours (companion, repeater and room server).
 
-People who want to *analyse* their mesh needs to flash an observer
-firmware. But every observer firmware available today is built on the repeater or
-room-server role. That means the node becomes infrastructure: **you can no longer
-use it from your phone.** So you need two devices, or you give up one for the
-other.
+People who want to *analyse* their mesh have to flash an observer firmware. Nearly
+all of them are built on the repeater or room-server role, which turns the node
+into infrastructure: **you can no longer use it from your phone.** So you need two
+devices, or you give up one for the other.
 
 This firmware removes that trade-off:
 
@@ -91,9 +91,25 @@ This is a fork of [meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCo
 [agessaman/MeshCore](https://github.com/agessaman/MeshCore), branch
 `mqtt-observer-plus`, which is where the community observer firmwares come from.
 
-What this fork adds is the wiring that was missing: the same bridge, driven from
-the **companion** role instead of the repeater. Work lives on the
-`companion-observer` branch.
+What this fork adds is the wiring: the same bridge, driven from the **companion**
+role instead of the repeater. Work lives on the `companion-observer` branch.
+
+### Prior art
+
+[Dreikor17/MeshCore-Observer-Companion](https://github.com/Dreikor17/MeshCore-Observer-Companion)
+got to the same idea first, in June 2026, and arrived at the same structure —
+including an identical fix for the `NodePrefs` clash described below. Worth
+reading; it also has an OLED status line this build lacks.
+
+The two differ in what the companion side can do. That project is a **USB**
+companion: WiFi carries the MQTT uplink only, and the phone connects by cable.
+Its configuration is compile-time (`OBSERVER_WIFI_SSID` and friends as build
+flags), with runtime configuration listed on its roadmap.
+
+Here the companion protocol runs over **TCP port 5000**, so the phone app
+connects over WiFi, and *all* configuration is runtime over the USB console —
+which the TCP transport leaves free. Target board is the T-Beam SX1262 rather
+than the Heltec V3.
 
 | Remote | Points at | Role |
 |---|---|---|
