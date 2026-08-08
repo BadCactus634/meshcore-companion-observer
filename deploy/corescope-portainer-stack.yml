@@ -1,8 +1,3 @@
-# CoreScope — Portainer stack for a MeshCore companion observer.
-#
-# Portainer → Stacks → Add stack → Web editor → paste this → set the
-# environment variables below → Deploy.
-#
 # One container runs everything: the Mosquitto broker the node publishes to,
 # the Go ingestor that decodes packets, the API server and the web UI.
 #
@@ -20,13 +15,13 @@ services:
     restart: unless-stopped
     ports:
       # Web UI. Use something above 1024 if your host already serves port 80.
-      - "${HTTP_PORT:-8080}:80"
+      - "3000:3000"
       # MQTT. The firmware connects here, so this one must be reachable from
       # the LAN — this is the port that goes in `set mqtt1.server`.
-      - "${MQTT_PORT:-1883}:1883"
+      - "1883:1883"
     volumes:
       # Holds config.json, the SQLite database and the theme. Back this up.
-      - ${DATA_DIR:-/opt/corescope/data}:/app/data
+      - /opt/corescope/data:/app/data
     environment:
       - DISABLE_CADDY=true
       - DISABLE_MOSQUITTO=false
@@ -36,13 +31,7 @@ services:
       timeout: 5s
       retries: 3
 
-# Environment variables to set in Portainer's stack editor:
-#
-#   DATA_DIR    /opt/corescope/data     host path, must exist
-#   HTTP_PORT   8080                    web UI
-#   MQTT_PORT   1883                    broker the node publishes to
-#
-# ---------------------------------------------------------------------------
+
 # $DATA_DIR/config.json — create before the first deploy:
 #
 # {
