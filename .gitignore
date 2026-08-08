@@ -23,3 +23,5 @@ platformio.local.ini
 .cursor/*
 .claude/*
 .cursorrules
+# staged release binaries (published via GitHub Releases, not committed)
+dist/

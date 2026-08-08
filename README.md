@@ -65,7 +65,11 @@ You still need somewhere to run the dashboard that *displays* the data, or you c
 
 ## Getting started
 
-1. **Flash the firmware** - [OBSERVER.md § Build](OBSERVER.md#build)
+1. **Flash the firmware** - download the image for your board from
+   [Releases](https://github.com/BadCactus634/meshcore-companion-observer/releases)
+   and upload it with the [MeshCore web flasher](https://flasher.meshcore.co.uk/)
+   as *custom firmware*. No toolchain needed. Details, and how to build it
+   yourself, in [OBSERVER.md § Build and flash](OBSERVER.md#build-and-flash).
 2. **Configure it** by typing commands in the node's CLI over USB - WiFi name and
    password, and where your broker lives. Nothing is baked into the firmware, so
    no passwords ever end up in this repository.

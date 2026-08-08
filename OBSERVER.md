@@ -8,6 +8,35 @@ Branch `companion-observer`, forked from `agessaman/mqtt-observer-plus` at
 
 ## Build and flash
 
+### Pre-built images (no toolchain needed)
+
+Merged firmware images for the three boards are attached to every
+[release](https://github.com/BadCactus634/meshcore-companion-observer/releases).
+To use one:
+
+1. Download the file for your board — `…-tbeam-sx1262-…-merged.bin`,
+   `…-heltec-v3-…-merged.bin` or `…-lilygo-t3s3-…-merged.bin`.
+2. Open the [MeshCore web flasher](https://flasher.meshcore.co.uk/), connect the
+   board over USB, and choose **custom firmware** instead of one of the listed
+   builds.
+3. Upload the file and flash.
+
+These are *merged* images — bootloader, partition table and application in one
+file written at offset `0x0` — which is what the flasher expects for a custom
+build. Nothing is baked in: no WiFi credentials, no broker. Configure the node
+over the USB console afterwards, as below.
+
+> The **T3-S3** image changes the partition table (`min_spiffs`, which the stock
+> T3-S3 companion builds do not use), so its first flash resets stored settings
+> including the node identity. The T-Beam and Heltec V3 images keep the layout
+> their stock builds already use.
+
+Releases are produced by
+[`.github/workflows/release-companion-observer.yml`](.github/workflows/release-companion-observer.yml),
+which builds all three targets and attaches them when a `v*` tag is pushed.
+
+### Building it yourself
+
 Pick the target for your board:
 
 | Board | Environment | Flash used |

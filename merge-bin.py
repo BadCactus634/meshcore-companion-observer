@@ -17,6 +17,11 @@ def merge_bin_action(source, target, env):
         "$ESP32_APP_OFFSET",
         source[0].get_abspath(),
     ]
+    # Paths must be quoted: a project directory containing spaces otherwise
+    # splits into extra arguments and esptool rejects the fragment as an
+    # address ("Address "PROGETTI" must be a number"), while pio still reports
+    # the target as SUCCESS. Quoting the offsets too is harmless — the shell
+    # strips the quotes before esptool sees them.
     merge_cmd = " ".join(
         [
             '"$PYTHONEXE"',
@@ -25,14 +30,14 @@ def merge_bin_action(source, target, env):
             board_config.get("build.mcu", "esp32"),
             "merge_bin",
             "-o",
-            merged_bin,
+            '"%s"' % merged_bin,
             "--flash_mode",
             board_config.get("build.flash_mode", "dio"),
             "--flash_freq",
             "${__get_board_f_flash(__env__)}",
             "--flash_size",
             board_config.get("upload.flash_size", "4MB"),
-            *flash_images,
+            *['"%s"' % image for image in flash_images],
         ]
     )
     env.Execute(merge_cmd)
