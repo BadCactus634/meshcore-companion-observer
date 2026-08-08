@@ -14,7 +14,7 @@ If you know Meshtastic, this firmware can be used to populate CoreScope (the Mes
 ## What problem does this solve?
 
 MeshCore firmware comes in a few flavours (companion, repeater and room server).
-Turning a node into an *observer* — one that reports mesh traffic for analysis —
+Turning a node into an *observer* - one that reports mesh traffic for analysis -
 normally costs you two things. This firmware costs you neither.
 
 ### You keep using the node from your phone
@@ -24,36 +24,29 @@ which turns the node into infrastructure: **you can no longer use it from your
 phone.** So you need two devices, or you give up one for the other.
 
 Here the node stays a companion. Your phone connects to it over WiFi and it
-behaves like any other companion radio — contacts, direct messages, channels,
-everything — while it quietly reports what it hears in the background.
+behaves like any other companion radio - contacts, direct messages, channels,
+everything - while it quietly reports what it hears in the background.
 
-### No computer attached to the radio
+### No computer attached to the node
 
 The usual observer setup is a chain: the node is flashed with packet logging,
-a **USB cable** runs from it to a Raspberry Pi or a mini PC, and a Python bridge
+a **USB cable** runs from it to a Raspberry Pi or a PC, and a Python bridge
 (`meshcoretomqtt`) on that machine reads the serial output and forwards it to
-MQTT. The radio has to live wherever the computer is, and if the computer sleeps,
-reboots or the cable is knocked out, you stop collecting.
+MQTT.
 
 This firmware does that job itself. It joins your WiFi and talks MQTT directly,
-so the node needs **nothing but a USB power supply** — a phone charger in the
+so the node needs **nothing but a USB power supply** - a phone charger in the
 attic, by a window, in the garden, wherever the antenna does best. No cable to a
 computer, no Python, no Raspberry Pi.
 
-You still need somewhere to run the dashboard that *displays* the data, but that
-is any machine on your network — a NAS, a mini PC, the computer you already
-have — and it does not have to be anywhere near the radio. It can even be
-somewhere else entirely, or you can publish to one of the public community
-brokers and run nothing at all.
+You still need somewhere to run the dashboard that *displays* the data, or you can publish to one of the public community brokers and run nothing at all.
 
-Nothing leaves your house unless you choose it to: point the node at your own
-broker and the data stays on your LAN.
 
 ## What you need
 
 | | |
 |---|---|
-| **A board** | Ready-made targets for **LilyGO T-Beam SX1262**, **Heltec WiFi LoRa 32 V3** and **LilyGO T3-S3**. Any other **ESP32** MeshCore board is one config block away, no code changes — see [OBSERVER.md](OBSERVER.md#porting-to-another-board). nRF52 boards (T1000-E, Wio Tracker L1, T-Echo, RAK4631) have no WiFi and cannot run this. |
+| **A board** | Ready-made targets for **LilyGO T-Beam SX1262**, **Heltec WiFi LoRa 32 V3** and **LilyGO T3-S3**. Any other **ESP32** MeshCore board is one config block away, no code changes - see [OBSERVER.md](OBSERVER.md#porting-to-another-board). nRF52 boards (T1000-E, Wio Tracker L1, T-Echo, RAK4631) have no WiFi and cannot run this. |
 | **WiFi and USB power** | That is the whole hardware requirement for the node itself. |
 | **Somewhere to run the dashboard** | Any machine on your network with Docker. Not attached to the radio, and not needed at all if you publish to a public broker. |
 
@@ -116,7 +109,7 @@ role instead of the repeater. Work lives on the `companion-observer` branch.
 ### Prior art
 
 [Dreikor17/MeshCore-Observer-Companion](https://github.com/Dreikor17/MeshCore-Observer-Companion)
-got to the same idea first, in June 2026, and arrived at the same structure —
+got to the same idea first, in June 2026, and arrived at the same structure -
 including an identical fix for the `NodePrefs` clash described below. Worth
 reading; it also has an OLED status line this build lacks.
 
@@ -126,7 +119,7 @@ Its configuration is compile-time (`OBSERVER_WIFI_SSID` and friends as build
 flags), with runtime configuration listed on its roadmap.
 
 Here the companion protocol runs over **TCP port 5000**, so the phone app
-connects over WiFi, and *all* configuration is runtime over the USB console —
+connects over WiFi, and *all* configuration is runtime over the USB console -
 which the TCP transport leaves free. Target board is the T-Beam SX1262 rather
 than the Heltec V3.
 
