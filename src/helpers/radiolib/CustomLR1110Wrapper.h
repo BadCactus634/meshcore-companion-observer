@@ -18,6 +18,9 @@ public:
     ((CustomLR1110 *)_radio)->setBandwidth(bw);
     ((CustomLR1110 *)_radio)->setCodingRate(cr);
     updatePreamble(sf);
+    PacketMillis pm = calcMaxPacketMillis(sf, bw, cr, preambleLengthForSF(sf));
+    ((CustomLR1110 *)_radio)->setPreambleMillis(pm.preambleMillis);
+    ((CustomLR1110 *)_radio)->setMaxPayloadMillis(pm.payloadMillis);
   }
 
   bool setCodingRate(uint8_t cr) override {

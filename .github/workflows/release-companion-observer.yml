@@ -10,6 +10,14 @@ name: Release companion observer firmware
 # Push a tag to cut a release:   git tag v0.1.0 && git push origin v0.1.0
 # Or run it by hand from the Actions tab to get downloadable artifacts without
 # creating a release.
+#
+# EVERY RELEASE, update two version-specific strings in the release body below:
+#   1. the MeshCore base version this build tracks ("based on MeshCore vX.Y.Z");
+#   2. the "Release notes:" URL — copy the link from the matching upstream
+#      release at github.com/meshcore-dev/MeshCore/releases (companion-vX.Y.Z).
+#      It is a new blog.meshcore.io URL for every release.
+# Also re-check the "Does this erase the node's memory?" section: it must state
+# what the upgrade actually does to stored config for that particular version.
 
 on:
   push:
@@ -81,9 +89,35 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.bin
-          generate_release_notes: true
+          # No auto-generated commit changelog: the upstream release notes linked
+          # in the body are what users actually want to read.
+          generate_release_notes: false
           body: |
-            Merged firmware images for the companion observer.
+            Merged firmware images for the companion observer, based on MeshCore
+            **v1.17.0**.
+
+            Release notes: https://blog.meshcore.io/2026/08/09/release-1-17-0
+
+            ## Does this erase the node's memory?
+
+            **No.** Flashing this firmware keeps the node's stored configuration —
+            identity, contacts, channels, radio settings and the observer's own
+            MQTT/WiFi settings all survive the update.
+
+            MeshCore 1.17 changes how preferences are stored (a JSON `prefs.json`
+            replaces the old fixed binary layout). The firmware converts the
+            existing file automatically on first boot and leaves the old one in
+            place, so nothing is lost and you can roll back.
+
+            The one exception is the **T3-S3**, and only when you come from a
+            *stock* T3-S3 companion build: the observer image needs a larger app
+            partition (`min_spiffs`) than the stock T3-S3 builds use, and changing
+            the partition table resets storage, including the node identity.
+            Upgrading from an earlier companion observer release uses the same
+            table, so nothing is erased. The T-Beam and Heltec V3 images keep the
+            layout their stock builds already use.
+
+            ## Flashing
 
             Flash with the [MeshCore web flasher](https://flasher.meshcore.co.uk/)
             — connect the board, choose **custom firmware**, and upload the file
@@ -95,11 +129,6 @@ jobs:
             | LilyGO T-Beam SX1262 | `…-tbeam-sx1262-…-merged.bin` |
             | Heltec WiFi LoRa 32 V3 | `…-heltec-v3-…-merged.bin` |
             | LilyGO T3-S3 | `…-lilygo-t3s3-…-merged.bin` |
-
-            **The T3-S3 image changes the partition table** (`min_spiffs`, which
-            the stock T3-S3 companion builds do not use), so its first flash
-            resets stored settings — including the node identity. The T-Beam and
-            Heltec V3 images keep the layout their stock builds already use.
 
             After flashing, configure the node over the USB console at 115200
             baud — see

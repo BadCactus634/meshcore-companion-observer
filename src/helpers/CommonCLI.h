@@ -6,6 +6,7 @@
 #include <helpers/ClientACL.h>
 #include <helpers/MQTTPresets.h>  // For MAX_MQTT_SLOTS (used in NodePrefs struct layout)
 #include <helpers/RegionMap.h>
+#include <helpers/ConfigSerializer.h>
 
 #if defined(WITH_RS232_BRIDGE) || defined(WITH_ESPNOW_BRIDGE) || defined(WITH_MQTT_BRIDGE)
 #define WITH_BRIDGE
@@ -99,88 +100,291 @@
 #define DIRECT_RETRY_PREFS_MAGIC_0  0xD1
 #define DIRECT_RETRY_PREFS_MAGIC_1  0x52
 
-struct NodePrefs { // persisted to file
-  float airtime_factor;
+class NodePrefs : public ConfigSerializer {
+public:
+  // in-memory backing data
+  float airtime_factor = 0;
   char node_name[32];
-  double node_lat, node_lon;
+  double node_lat = 0, node_lon = 0;
   char password[16];
-  float freq;
-  int8_t tx_power_dbm;
-  uint8_t disable_fwd;
-  uint8_t advert_interval;       // minutes / 2
-  uint8_t flood_advert_interval; // hours
-  float rx_delay_base;
-  float tx_delay_factor;
+  float freq = 0;
+  int8_t tx_power_dbm = 0;
+  uint8_t disable_fwd = 0;
+  uint8_t advert_interval = 0;       // minutes / 2
+  uint8_t flood_advert_interval = 0; // hours
+  float rx_delay_base = 0;
+  float tx_delay_factor = 0;
   char guest_password[16];
-  float direct_tx_delay_factor;
+  float direct_tx_delay_factor = 0;
   uint32_t guard;
-  uint8_t sf;
-  uint8_t cr;
-  uint8_t allow_read_only;
-  uint8_t multi_acks;
-  float bw;
-  uint8_t flood_max;
-  uint8_t flood_max_unscoped;
-  uint8_t flood_max_advert;
-  uint8_t interference_threshold;
-  uint8_t agc_reset_interval; // secs / 4
+  uint8_t sf = 0;
+  uint8_t cr = 0;
+  uint8_t allow_read_only = 0;
+  uint8_t multi_acks = 0;
+  float bw = 0;
+  uint8_t flood_max = 0;
+  uint8_t flood_max_unscoped = 0;
+  uint8_t flood_max_advert = 0;
+  uint8_t interference_threshold = 0;
+  uint8_t agc_reset_interval = 0; // secs / 4
   // Bridge settings
-  uint8_t bridge_enabled; // boolean
-  uint16_t bridge_delay;  // milliseconds (default 500 ms)
-  uint8_t bridge_pkt_src; // 0 = logTx, 1 = logRx (default logRx)
-  uint32_t bridge_baud;   // 9600, 19200, 38400, 57600, 115200 (default 115200)
-  uint8_t bridge_channel; // 1-14 (ESP-NOW only)
+  uint8_t bridge_enabled = 0; // boolean
+  uint16_t bridge_delay = 0;  // milliseconds (default 500 ms)
+  uint8_t bridge_pkt_src = 0; // 0 = logTx, 1 = logRx (default logRx)
+  uint32_t bridge_baud = 0;   // 9600, 19200, 38400, 57600, 115200 (default 115200)
+  uint8_t bridge_channel = 0; // 1-14 (ESP-NOW only)
   char bridge_secret[16]; // for XOR encryption of bridge packets (ESP-NOW only)
   // Power setting
-  uint8_t powersaving_enabled; // boolean
-  uint8_t reboot_interval; // hours, 0-255 (default 0=disable)
+  uint8_t powersaving_enabled = 0; // boolean
+  uint8_t reboot_interval = 0; // hours, 0-255 (default 0=disable)
   // Gps settings
-  uint8_t gps_enabled;
-  uint32_t gps_interval; // in seconds
-  uint8_t advert_loc_policy;
-  uint32_t discovery_mod_timestamp;
-  float adc_multiplier;
+  uint8_t gps_enabled = 0;
+  uint32_t gps_interval = 0; // in seconds
+  uint8_t advert_loc_policy = 0;
+  uint32_t discovery_mod_timestamp = 0;
+  float adc_multiplier = 0;
   char owner_info[120];
-  // NOTE: member order below matches mcarper/keymindCascade (upstream/dev order).
-  // It is in-memory only — /com_prefs is read/written field-by-field in loadPrefsInt/
-  // savePrefs, whose canonical file order (identical to the flex fleet's through
-  // offset 294, keymind retry tail at 295+) is what devices actually persist.
-  uint8_t rx_boosted_gain; // power settings
-  uint8_t radio_fem_rxgain; // LoRa FEM RX gain setting
-  uint8_t path_hash_mode;   // which path mode to use when sending
-  uint8_t loop_detect;
-  uint8_t cad_enabled;      // hardware Channel Activity Detection before TX (boolean)
-  uint8_t retry_preset;
-  uint8_t direct_retry_attempts;
-  uint16_t direct_retry_base_ms;
-  uint16_t direct_retry_step_ms;
-  uint16_t direct_retry_snr_margin_x4;
-  int8_t direct_retry_cr4_snr_x4;
-  int8_t direct_retry_cr5_snr_x4;
-  int8_t direct_retry_cr7_snr_x4;
-  int8_t direct_retry_cr8_snr_x4;
-  uint8_t direct_retry_enabled;
-  uint8_t direct_retry_cr_enabled;
+  uint8_t rx_boosted_gain = 0; // power settings
+  uint8_t radio_fem_rxgain = 0; // LoRa FEM RX gain setting
+  uint8_t path_hash_mode = 0;   // which path mode to use when sending
+  uint8_t loop_detect = 0;
+  uint8_t cad_enabled = 0;      // hardware Channel Activity Detection before TX (boolean)
+  uint8_t extra_sf[4];
+  // keymindCascade retry/flood tail. Persisted as JSON groups below; the legacy
+  // /com_prefs binary layout (offsets 295+) is still read once by loadPrefsInt()
+  // so upgrading nodes keep these settings.
+  uint8_t retry_preset = 0;
+  uint8_t direct_retry_attempts = 0;
+  uint16_t direct_retry_base_ms = 0;
+  uint16_t direct_retry_step_ms = 0;
+  uint16_t direct_retry_snr_margin_x4 = 0;
+  int8_t direct_retry_cr4_snr_x4 = 0;
+  int8_t direct_retry_cr5_snr_x4 = 0;
+  int8_t direct_retry_cr7_snr_x4 = 0;
+  int8_t direct_retry_cr8_snr_x4 = 0;
+  uint8_t direct_retry_enabled = 0;
+  uint8_t direct_retry_cr_enabled = 0;
   uint8_t direct_retry_prefs_magic[2];
-  uint8_t flood_retry_attempts;
-  uint8_t flood_retry_max_path;
+  uint8_t flood_retry_attempts = 0;
+  uint8_t flood_retry_max_path = 0;
   uint8_t flood_retry_prefixes[FLOOD_RETRY_PREFIX_SLOTS][FLOOD_RETRY_PREFIX_LEN];
-  uint8_t flood_retry_bridge_enabled;
+  uint8_t flood_retry_bridge_enabled = 0;
   uint8_t flood_retry_bridge_buckets[FLOOD_RETRY_BRIDGE_BUCKETS][FLOOD_RETRY_BUCKET_PREFIXES][FLOOD_RETRY_PREFIX_LEN];
   uint8_t flood_retry_ignore_prefixes[FLOOD_RETRY_IGNORE_PREFIXES][FLOOD_RETRY_PREFIX_LEN];
-  uint8_t flood_retry_advert_enabled;
-  uint8_t battery_alert_enabled;
-  uint8_t battery_alert_low_percent;
-  uint8_t battery_alert_critical_percent;
-  uint8_t direct_retry_recent_enabled;
-  uint8_t flood_channel_data_enabled;
-  uint8_t flood_channel_block_max_hops;
-  uint8_t flood_channel_data_max_hops;
+  uint8_t flood_retry_advert_enabled = 0;
+  uint8_t battery_alert_enabled = 0;
+  uint8_t battery_alert_low_percent = 0;
+  uint8_t battery_alert_critical_percent = 0;
+  uint8_t direct_retry_recent_enabled = 0;
+  uint8_t flood_channel_data_enabled = 0;
+  uint8_t flood_channel_block_max_hops = 0;
+  uint8_t flood_channel_data_max_hops = 0;
 
-  // NOTE: observer settings (MQTT/WiFi/timezone/SNMP/alert) were moved out of
-  // NodePrefs into MQTTPrefs (persisted to /mqtt_prefs) so this struct stays
-  // aligned with upstream (plus the keymind retry/flood tail above). See
-  // struct MQTTPrefs below.
+  // NOTE: observer settings (MQTT/WiFi/timezone/SNMP/alert) live in MQTTPrefs
+  // (persisted to /mqtt_prefs), not here. See struct MQTTPrefs below.
+
+private:
+  class RadioPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("freq", _parent->freq);
+      def("bw", _parent->bw);
+      def("sf", _parent->sf);
+      def("cr", _parent->cr);
+      def("cad", _parent->cad_enabled);
+      def("int_thr", _parent->interference_threshold);
+      def("extra_sf", (void *) _parent->extra_sf, sizeof(_parent->extra_sf));
+      def("rxgain", _parent->rx_boosted_gain);
+      def("fem_rxgain", _parent->radio_fem_rxgain);
+      def("tx", _parent->tx_power_dbm);
+      def("af", _parent->airtime_factor);
+      def("rxdelay", _parent->rx_delay_base);
+      def("f_txdelay", _parent->tx_delay_factor);
+      def("d_txdelay", _parent->direct_tx_delay_factor);
+      def("agc_int", _parent->agc_reset_interval);
+      def("hash_mode", _parent->path_hash_mode);
+      def("multi_ack", _parent->multi_acks);
+    }
+  public:
+    RadioPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  RadioPrefs radio;
+
+  class BridgePrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("en", _parent->bridge_enabled); // boolean
+      def("delay", _parent->bridge_delay);  // milliseconds (default 500 ms)
+      def("src", _parent->bridge_pkt_src); // 0 = logTx, 1 = logRx (default logTx)
+      def("baud", _parent->bridge_baud);   // 9600, 19200, 38400, 57600, 115200 (default 115200)
+      def("ch", _parent->bridge_channel); // 1-14 (ESP-NOW only)
+      def("secret", _parent->bridge_secret, sizeof(_parent->bridge_secret)); // for XOR encryption of bridge packets (ESP-NOW only)
+    }
+  public:
+    BridgePrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  BridgePrefs bridge;
+
+  class GPSPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("en", _parent->gps_enabled); // boolean
+      def("int", _parent->gps_interval);   // interval in seconds
+      def("adv_loc", _parent->advert_loc_policy);
+    }
+  public:
+    GPSPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  GPSPrefs gps;
+
+  class PowerPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("adc_mult", _parent->adc_multiplier);
+      def("pwr_sav_en", _parent->powersaving_enabled);
+      def("reboot", _parent->reboot_interval);
+    }
+  public:
+    PowerPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  PowerPrefs power;
+
+  class RepeatPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("disable", _parent->disable_fwd);
+      def("f_max", _parent->flood_max);
+      def("f_max_uns", _parent->flood_max_unscoped);
+      def("f_max_adv", _parent->flood_max_advert);
+      def("loop", _parent->loop_detect);
+    }
+  public:
+    RepeatPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  RepeatPrefs repeat;
+
+  class RoomPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("rd_only", _parent->allow_read_only);
+    }
+  public:
+    RoomPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  RoomPrefs room;
+
+  // --- keymindCascade fork groups ---
+
+  class RetryPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("preset", _parent->retry_preset);
+      def("en", _parent->direct_retry_enabled);
+      def("cr_en", _parent->direct_retry_cr_enabled);
+      def("recent_en", _parent->direct_retry_recent_enabled);
+      def("att", _parent->direct_retry_attempts);
+      def("base_ms", _parent->direct_retry_base_ms);
+      def("step_ms", _parent->direct_retry_step_ms);
+      def("snr_x4", _parent->direct_retry_snr_margin_x4);
+      def("cr4", _parent->direct_retry_cr4_snr_x4);
+      def("cr5", _parent->direct_retry_cr5_snr_x4);
+      def("cr7", _parent->direct_retry_cr7_snr_x4);
+      def("cr8", _parent->direct_retry_cr8_snr_x4);
+      def("magic", (void *) _parent->direct_retry_prefs_magic, sizeof(_parent->direct_retry_prefs_magic));
+    }
+  public:
+    RetryPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  RetryPrefs retry;
+
+  class FloodPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("att", _parent->flood_retry_attempts);
+      def("max_path", _parent->flood_retry_max_path);
+      def("prefixes", (void *) _parent->flood_retry_prefixes, sizeof(_parent->flood_retry_prefixes));
+      def("ignore", (void *) _parent->flood_retry_ignore_prefixes, sizeof(_parent->flood_retry_ignore_prefixes));
+      def("adv_en", _parent->flood_retry_advert_enabled);
+      def("br_en", _parent->flood_retry_bridge_enabled);
+      // Buckets are written one key per bucket: the whole array is
+      // FLOOD_RETRY_BRIDGE_BUCKETS * FLOOD_RETRY_BUCKET_PREFIXES * FLOOD_RETRY_PREFIX_LEN
+      // bytes, and a single hex blob of that size would exceed CONFIG_MAX_TOKEN_LEN.
+      static_assert(FLOOD_RETRY_BUCKET_PREFIXES * FLOOD_RETRY_PREFIX_LEN * 2 < CONFIG_MAX_TOKEN_LEN,
+                    "flood bucket blob exceeds ConfigSerializer token buffer");
+      char key[8];
+      for (uint8_t i = 0; i < FLOOD_RETRY_BRIDGE_BUCKETS; i++) {
+        sprintf(key, "b%u", (unsigned) i);
+        def(key, (void *) _parent->flood_retry_bridge_buckets[i],
+            sizeof(_parent->flood_retry_bridge_buckets[i]));
+      }
+      def("ch_data_en", _parent->flood_channel_data_enabled);
+      def("ch_blk_hops", _parent->flood_channel_block_max_hops);
+      def("ch_data_hops", _parent->flood_channel_data_max_hops);
+    }
+  public:
+    FloodPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  FloodPrefs flood;
+
+  class AlertPrefs : public ConfigSerializer {
+    NodePrefs* _parent;
+  protected:
+    void structure() override {
+      def("batt_en", _parent->battery_alert_enabled);
+      def("batt_low", _parent->battery_alert_low_percent);
+      def("batt_crit", _parent->battery_alert_critical_percent);
+    }
+  public:
+    AlertPrefs(NodePrefs* parent) : _parent(parent) { }
+  };
+  AlertPrefs alert;
+
+protected:
+  void structure() override {
+    def("name", node_name, sizeof(node_name));
+    def("pass", password, sizeof(password));
+    def("guest", guest_password, sizeof(guest_password));
+    def("owner", owner_info, sizeof(owner_info));
+    def("adv_int", advert_interval);
+    def("f_adv_int", flood_advert_interval);
+    def("lat", node_lat);
+    def("lon", node_lon);
+    // Persisted by the fork's legacy /com_prefs layout and still used to answer
+    // DISCOVER_REQ "since" filters, so keep it in the JSON prefs too.
+    def("disc_mod", discovery_mod_timestamp);
+    def("radio", radio);
+    def("bridge", bridge);
+    def("gps", gps);
+    def("repeat", repeat);
+    def("room", room);
+    def("power", power);
+    def("retry", retry);
+    def("flood", flood);
+    def("alert", alert);
+  }
+
+public:
+  NodePrefs() : ConfigSerializer(), bridge(this), gps(this), radio(this), power(this), repeat(this), room(this),
+                retry(this), flood(this), alert(this) {
+    node_name[0] = 0;
+    password[0] = 0;
+    guest_password[0] = 0;
+    bridge_secret[0] = 0;
+    owner_info[0] = 0;
+    memset(extra_sf, 0, sizeof(extra_sf));
+    memset(direct_retry_prefs_magic, 0, sizeof(direct_retry_prefs_magic));
+    memset(flood_retry_prefixes, 0, sizeof(flood_retry_prefixes));
+    memset(flood_retry_bridge_buckets, 0, sizeof(flood_retry_bridge_buckets));
+    memset(flood_retry_ignore_prefixes, 0, sizeof(flood_retry_ignore_prefixes));
+  }
 };
 
 #ifdef WITH_MQTT_BRIDGE
@@ -526,6 +730,11 @@ public:
   virtual bool resolveAlertScope(TransportKey& /*dest*/) {
     return false; // no op by default
   }
+  #if defined(USE_LR2021)
+  virtual bool configSideDetectors(const uint8_t sideDetSFs[], uint8_t num, float bw) {
+    return false; // Override in wrapper
+  }
+  #endif
 };
 
 class CommonCLI {
@@ -575,7 +784,7 @@ public:
       : _board(&board), _rtc(&rtc), _sensors(&sensors), _region_map(&region_map), _acl(&acl), _prefs(prefs), _callbacks(callbacks) { }
 
   void loadPrefs(FILESYSTEM* _fs);
-  void savePrefs(FILESYSTEM* _fs);
+  bool savePrefs(FILESYSTEM* _fs);
   void handleCommand(uint32_t sender_timestamp, char* command, char* reply);
   mesh::MainBoard* getBoard() { return _board; }
   uint8_t buildAdvertData(uint8_t node_type, uint8_t* app_data);

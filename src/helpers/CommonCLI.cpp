@@ -637,14 +637,30 @@ static void formatSnrDbX4Short(char* dest, size_t dest_len, int16_t snr_x4) {
 void CommonCLI::loadPrefs(FILESYSTEM* fs) {
   bool is_fresh_install = false;
   bool is_upgrade = false;
-  
-  if (fs->exists("/com_prefs")) {
-    loadPrefsInt(fs, "/com_prefs");   // new filename
+  // Legacy binary prefs found -> rewrite them as /prefs.json. Deferred to the end
+  // of this function on purpose: savePrefs() also rewrites /mqtt_prefs, so saving
+  // before loadMQTTPrefs() below would flush freshly-defaulted observer settings
+  // over the user's stored broker/WiFi config.
+  bool needs_convert = false;
+
+  if (fs->exists("/prefs.json")) {
+#if defined(RP2040_PLATFORM)
+    File file = fs->open("/prefs.json", "r");
+#else
+    File file = fs->open("/prefs.json");
+#endif
+    if (file) {
+      _prefs->loadSerial(file);   // new Serial prefs
+      file.close();
+    }
+  } else if (fs->exists("/com_prefs")) {
+    loadPrefsInt(fs, "/com_prefs");   // legacy binary layout
+    is_upgrade = true;
+    needs_convert = true;  // -> /prefs.json below (legacy file is left in place)
   } else if (fs->exists("/node_prefs")) {
-    loadPrefsInt(fs, "/node_prefs");
+    loadPrefsInt(fs, "/node_prefs");  // oldest filename
     is_upgrade = true;  // Migrating from old filename
-    savePrefs(fs);  // save to new filename
-    fs->remove("/node_prefs");  // remove old
+    needs_convert = true;  // -> /prefs.json below (legacy file is left in place)
   } else {
     // File doesn't exist - set default bridge settings for fresh installs
     is_fresh_install = true;
@@ -661,24 +677,25 @@ void CommonCLI::loadPrefs(FILESYSTEM* fs) {
   if ((is_fresh_install || is_upgrade) && _prefs->bridge_pkt_src == 0) {
     MESH_DEBUG_PRINTLN("MQTT Bridge: Migrating bridge.source from tx to rx (MQTT bridge default)");
     _prefs->bridge_pkt_src = 1;  // Set to RX (logRx)
-    savePrefs(fs);  // Save the updated preference
+    needs_convert = true;  // persisted by the single save below
   }
   // mqtt_rx_enabled: new field appended to end of MQTTPrefs. On upgrade from older firmware,
   // the shorter /mqtt_prefs file won't contain it, so it keeps the default value (1 = on)
   // set by setMQTTPrefsDefaults(). No explicit migration needed.
 #endif
 
-  if (_com_prefs_needs_upgrade) {
-    // Old-format /com_prefs (legacy MQTT gap + trailing observer block) was detected:
-    // rewrite the prefs files in the current layout, one time. This persists the
-    // recovered rx_boosted_gain/flood_max_* values and (on MQTT builds) the observer
-    // settings that loadMQTTPrefs carried over into /mqtt_prefs.
+  if (needs_convert || _com_prefs_needs_upgrade) {
+    // Single write, after loadMQTTPrefs(): converts legacy binary prefs to
+    // /prefs.json and, when an old-format /com_prefs (legacy MQTT gap + trailing
+    // observer block) was detected, persists the recovered rx_boosted_gain/
+    // flood_max_* values and the observer settings loadMQTTPrefs carried over
+    // into /mqtt_prefs.
     savePrefs(fs);
     _com_prefs_needs_upgrade = false;
   }
 }
 
-void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
+void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {  // Legacy prefs loader
 #if defined(RP2040_PLATFORM)
   File file = fs->open(filename, "r");
 #else
@@ -1004,100 +1021,18 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
   }
 }
 
-void CommonCLI::savePrefs(FILESYSTEM* fs) {
+bool CommonCLI::savePrefs(FILESYSTEM* fs) {
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  fs->remove("/com_prefs");
-  File file = fs->open("/com_prefs", FILE_O_WRITE);
+  fs->remove("/prefs.json");
+  File file = fs->open("/prefs.json", FILE_O_WRITE);
 #elif defined(RP2040_PLATFORM)
-  File file = fs->open("/com_prefs", "w");
+  File file = fs->open("/prefs.json", "w");
 #else
-  File file = fs->open("/com_prefs", "w", true);
+  File file = fs->open("/prefs.json", "w", true);
 #endif
+  bool success = false;
   if (file) {
-    uint8_t pad[8];
-    memset(pad, 0, sizeof(pad));
-
-    file.write((uint8_t *)&_prefs->airtime_factor, sizeof(_prefs->airtime_factor));    // 0
-    file.write((uint8_t *)&_prefs->node_name, sizeof(_prefs->node_name));              // 4
-    file.write(pad, 4);                                                                // 36
-    file.write((uint8_t *)&_prefs->node_lat, sizeof(_prefs->node_lat));                // 40
-    file.write((uint8_t *)&_prefs->node_lon, sizeof(_prefs->node_lon));                // 48
-    file.write((uint8_t *)&_prefs->password[0], sizeof(_prefs->password));             // 56
-    file.write((uint8_t *)&_prefs->freq, sizeof(_prefs->freq));                        // 72
-    file.write((uint8_t *)&_prefs->tx_power_dbm, sizeof(_prefs->tx_power_dbm));        // 76
-    file.write((uint8_t *)&_prefs->disable_fwd, sizeof(_prefs->disable_fwd));          // 77
-    file.write((uint8_t *)&_prefs->advert_interval, sizeof(_prefs->advert_interval));  // 78
-    file.write(pad, 1);                                                                // 79 : 1 byte unused (rx_boosted_gain moved to end)
-    file.write((uint8_t *)&_prefs->rx_delay_base, sizeof(_prefs->rx_delay_base));      // 80
-    file.write((uint8_t *)&_prefs->tx_delay_factor, sizeof(_prefs->tx_delay_factor));  // 84
-    file.write((uint8_t *)&_prefs->guest_password[0], sizeof(_prefs->guest_password)); // 88
-    file.write((uint8_t *)&_prefs->direct_tx_delay_factor, sizeof(_prefs->direct_tx_delay_factor)); // 104
-    file.write(pad, 4);                                                                             // 108
-    file.write((uint8_t *)&_prefs->sf, sizeof(_prefs->sf));                                         // 112
-    file.write((uint8_t *)&_prefs->cr, sizeof(_prefs->cr));                                         // 113
-    file.write((uint8_t *)&_prefs->allow_read_only, sizeof(_prefs->allow_read_only));               // 114
-    file.write((uint8_t *)&_prefs->multi_acks, sizeof(_prefs->multi_acks));                         // 115
-    file.write((uint8_t *)&_prefs->bw, sizeof(_prefs->bw));                                         // 116
-    file.write((uint8_t *)&_prefs->agc_reset_interval, sizeof(_prefs->agc_reset_interval));         // 120
-    file.write((uint8_t *)&_prefs->path_hash_mode, sizeof(_prefs->path_hash_mode));                 // 121
-    file.write((uint8_t *)&_prefs->loop_detect, sizeof(_prefs->loop_detect));                       // 122
-    file.write(pad, 1);                                                                             // 123
-    file.write((uint8_t *)&_prefs->flood_max, sizeof(_prefs->flood_max));                           // 124
-    file.write((uint8_t *)&_prefs->flood_advert_interval, sizeof(_prefs->flood_advert_interval));   // 125
-    file.write((uint8_t *)&_prefs->interference_threshold, sizeof(_prefs->interference_threshold)); // 126
-    file.write((uint8_t *)&_prefs->bridge_enabled, sizeof(_prefs->bridge_enabled));                 // 127
-    file.write((uint8_t *)&_prefs->bridge_delay, sizeof(_prefs->bridge_delay));                     // 128
-    file.write((uint8_t *)&_prefs->bridge_pkt_src, sizeof(_prefs->bridge_pkt_src));                 // 130
-    file.write((uint8_t *)&_prefs->bridge_baud, sizeof(_prefs->bridge_baud));                       // 131
-    file.write((uint8_t *)&_prefs->bridge_channel, sizeof(_prefs->bridge_channel));                 // 135
-    file.write((uint8_t *)&_prefs->bridge_secret, sizeof(_prefs->bridge_secret));                   // 136
-    file.write((uint8_t *)&_prefs->powersaving_enabled, sizeof(_prefs->powersaving_enabled));       // 152
-    file.write((uint8_t *)&_prefs->reboot_interval, sizeof(_prefs->reboot_interval));               // 153
-    file.write(pad, 2);                                                                             // 154
-    file.write((uint8_t *)&_prefs->gps_enabled, sizeof(_prefs->gps_enabled));                       // 156
-    file.write((uint8_t *)&_prefs->gps_interval, sizeof(_prefs->gps_interval));                     // 157
-    file.write((uint8_t *)&_prefs->advert_loc_policy, sizeof(_prefs->advert_loc_policy));           // 161
-    file.write((uint8_t *)&_prefs->discovery_mod_timestamp, sizeof(_prefs->discovery_mod_timestamp)); // 162
-    file.write((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier));                 // 166
-    file.write((uint8_t *)_prefs->owner_info, sizeof(_prefs->owner_info));                          // 170
-    // MQTT/observer settings are stored in /mqtt_prefs, not here. No zero-gap is
-    // written anymore — /com_prefs holds the upstream fields plus the keymind
-    // retry tail below (loadPrefsInt reads the same sequence; keep in sync).
-    file.write((uint8_t *)&_prefs->rx_boosted_gain, sizeof(_prefs->rx_boosted_gain));               // 290
-    file.write((uint8_t *)&_prefs->flood_max_unscoped, sizeof(_prefs->flood_max_unscoped));         // 291
-    file.write((uint8_t *)&_prefs->flood_max_advert, sizeof(_prefs->flood_max_advert));             // 292
-    file.write((uint8_t *)&_prefs->radio_fem_rxgain, sizeof(_prefs->radio_fem_rxgain));             // 293
-    file.write((uint8_t *)&_prefs->cad_enabled, sizeof(_prefs->cad_enabled));                       // 294
-    // next: 295
-    markDirectRetryPrefsValid(_prefs);
-    file.write((uint8_t *)&_prefs->retry_preset, sizeof(_prefs->retry_preset));                     // 295
-    file.write((uint8_t *)&_prefs->direct_retry_attempts, sizeof(_prefs->direct_retry_attempts));   // 296
-    file.write((uint8_t *)&_prefs->direct_retry_base_ms, sizeof(_prefs->direct_retry_base_ms));     // 297
-    file.write((uint8_t *)&_prefs->direct_retry_step_ms, sizeof(_prefs->direct_retry_step_ms));     // 299
-    file.write((uint8_t *)&_prefs->direct_retry_snr_margin_x4, sizeof(_prefs->direct_retry_snr_margin_x4)); // 301
-    file.write((uint8_t *)&_prefs->direct_retry_cr4_snr_x4, sizeof(_prefs->direct_retry_cr4_snr_x4)); // 303
-    file.write((uint8_t *)&_prefs->direct_retry_cr5_snr_x4, sizeof(_prefs->direct_retry_cr5_snr_x4)); // 304
-    file.write((uint8_t *)&_prefs->direct_retry_cr7_snr_x4, sizeof(_prefs->direct_retry_cr7_snr_x4)); // 305
-    file.write((uint8_t *)&_prefs->direct_retry_cr8_snr_x4, sizeof(_prefs->direct_retry_cr8_snr_x4)); // 306
-    file.write((uint8_t *)&_prefs->direct_retry_enabled, sizeof(_prefs->direct_retry_enabled));       // 307
-    file.write((uint8_t *)&_prefs->direct_retry_cr_enabled, sizeof(_prefs->direct_retry_cr_enabled)); // 308
-    file.write((uint8_t *)&_prefs->direct_retry_prefs_magic, sizeof(_prefs->direct_retry_prefs_magic)); // 309
-    file.write((uint8_t *)&_prefs->flood_retry_attempts, sizeof(_prefs->flood_retry_attempts));       // 311
-    file.write((uint8_t *)&_prefs->flood_retry_max_path, sizeof(_prefs->flood_retry_max_path));       // 312
-    file.write((uint8_t *)&_prefs->flood_retry_prefixes[0][0], sizeof(_prefs->flood_retry_prefixes)); // 313
-    file.write((uint8_t *)&_prefs->flood_retry_bridge_enabled, sizeof(_prefs->flood_retry_bridge_enabled));
-    file.write((uint8_t *)&_prefs->flood_retry_bridge_buckets[0][0][0], sizeof(_prefs->flood_retry_bridge_buckets));
-    file.write((uint8_t *)&_prefs->flood_retry_ignore_prefixes[0][0], sizeof(_prefs->flood_retry_ignore_prefixes));
-    file.write((uint8_t *)&_prefs->flood_retry_advert_enabled, sizeof(_prefs->flood_retry_advert_enabled));
-    file.write((uint8_t *)&_prefs->battery_alert_enabled, sizeof(_prefs->battery_alert_enabled));
-    file.write((uint8_t *)&_prefs->battery_alert_low_percent, sizeof(_prefs->battery_alert_low_percent));
-    file.write((uint8_t *)&_prefs->battery_alert_critical_percent, sizeof(_prefs->battery_alert_critical_percent));
-    file.write((uint8_t *)&_prefs->direct_retry_recent_enabled, sizeof(_prefs->direct_retry_recent_enabled));
-    file.write((uint8_t *)&_prefs->flood_channel_data_enabled, sizeof(_prefs->flood_channel_data_enabled));
-    file.write((uint8_t *)&_prefs->flood_channel_block_max_hops, sizeof(_prefs->flood_channel_block_max_hops));
-    file.write((uint8_t *)&_prefs->flood_channel_data_max_hops, sizeof(_prefs->flood_channel_data_max_hops));
-    // next: 674
-
+    success = _prefs->saveSerial(file);
     file.close();
   }
 #ifdef WITH_MQTT_BRIDGE
@@ -1105,6 +1040,7 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
   // observer CLI writes _mqtt_prefs directly, so no NodePrefs->MQTTPrefs sync runs.
   saveMQTTPrefs(fs);
 #endif
+  return success;
 }
 
 #ifdef WITH_MQTT_BRIDGE
@@ -2389,6 +2325,28 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
       savePrefs();
       sprintf(reply, "OK - reboot.interval set to %d", _prefs->reboot_interval);
     }
+  #if defined(USE_LR2021)
+  } else if (memcmp(config, "extra.sf ", 9) == 0) {
+    strcpy(tmp, &config[9]);
+    const char *parts[4];
+    uint8_t sideDetSFs[4];
+    int num = mesh::Utils::parseTextParts(tmp, parts, 4);
+    if (num > 3) {
+      sprintf(reply, "Invalid extra SF config");
+    } else {
+      for (int i = 0; i < num; i++) {
+        sideDetSFs[i] = atoi(parts[i]);
+      }
+      sideDetSFs[num] = 0;
+      if (_callbacks->configSideDetectors(sideDetSFs, num, _prefs->bw)) {
+        for (int i = 0; i <= num; i++) _prefs->extra_sf[i] = sideDetSFs[i];
+        savePrefs();
+        sprintf(reply, "OK - extra SFs set");
+      } else {
+        sprintf(reply, "Invalid extra SF config");
+      }
+    }
+  #endif
   } else {
     sprintf(reply, "unknown config: %s", config);
   }
@@ -2653,6 +2611,14 @@ void CommonCLI::handleGetCmd(uint32_t sender_timestamp, char* command, char* rep
       strcpy(reply, "disabled");
     } else {
       sprintf(reply, "> %d", (uint8_t)_prefs->reboot_interval);
+    }
+  } else if (memcmp(config, "extra.sf", 8) == 0) {
+    char* tmp = reply;
+    for (int i = 0; i < 3 && _prefs->extra_sf[i] != 0; i++) {
+      tmp += sprintf(tmp, "%s%d", (i == 0) ? "" : ",", _prefs->extra_sf[i]);
+    }
+    if (tmp == reply) {
+      sprintf(reply, "No extra SF configured");
     }
   } else {
     sprintf(reply, "??: %s", config);

@@ -26,10 +26,15 @@ file written at offset `0x0` — which is what the flasher expects for a custom
 build. Nothing is baked in: no WiFi credentials, no broker. Configure the node
 over the USB console afterwards, as below.
 
-> The **T3-S3** image changes the partition table (`min_spiffs`, which the stock
-> T3-S3 companion builds do not use), so its first flash resets stored settings
-> including the node identity. The T-Beam and Heltec V3 images keep the layout
-> their stock builds already use.
+> Flashing a release image keeps the node's stored configuration — identity,
+> contacts, channels and settings all survive. (A full erase is a separate,
+> deliberate step; see [Flashing with a full erase](#flashing-with-a-full-erase).)
+>
+> One exception: the **T3-S3** image changes the partition table (`min_spiffs`,
+> which the stock T3-S3 companion builds do not use), so moving from a *stock*
+> T3-S3 build resets stored settings including the node identity. Going from one
+> companion observer release to another uses the same table and erases nothing.
+> The T-Beam and Heltec V3 images keep the layout their stock builds already use.
 
 Releases are produced by
 [`.github/workflows/release-companion-observer.yml`](.github/workflows/release-companion-observer.yml),
