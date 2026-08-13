@@ -292,11 +292,13 @@ private:
       def("att", _parent->direct_retry_attempts);
       def("base_ms", _parent->direct_retry_base_ms);
       def("step_ms", _parent->direct_retry_step_ms);
-      def("snr_x4", _parent->direct_retry_snr_margin_x4);
-      def("cr4", _parent->direct_retry_cr4_snr_x4);
-      def("cr5", _parent->direct_retry_cr5_snr_x4);
-      def("cr7", _parent->direct_retry_cr7_snr_x4);
-      def("cr8", _parent->direct_retry_cr8_snr_x4);
+      // NOTE: keys must be letters/underscore only — ConfigSerializer's
+      // is_key_char() rejects digits, and a bad key aborts the whole load.
+      def("snr_margin", _parent->direct_retry_snr_margin_x4);
+      def("cr_four", _parent->direct_retry_cr4_snr_x4);
+      def("cr_five", _parent->direct_retry_cr5_snr_x4);
+      def("cr_seven", _parent->direct_retry_cr7_snr_x4);
+      def("cr_eight", _parent->direct_retry_cr8_snr_x4);
       def("magic", (void *) _parent->direct_retry_prefs_magic, sizeof(_parent->direct_retry_prefs_magic));
     }
   public:
@@ -316,12 +318,18 @@ private:
       def("br_en", _parent->flood_retry_bridge_enabled);
       // Buckets are written one key per bucket: the whole array is
       // FLOOD_RETRY_BRIDGE_BUCKETS * FLOOD_RETRY_BUCKET_PREFIXES * FLOOD_RETRY_PREFIX_LEN
-      // bytes, and a single hex blob of that size would exceed CONFIG_MAX_TOKEN_LEN.
-      static_assert(FLOOD_RETRY_BUCKET_PREFIXES * FLOOD_RETRY_PREFIX_LEN * 2 < CONFIG_MAX_TOKEN_LEN,
+      // bytes, and a single hex blob of that size would exceed CONFIG_MAX_TOKEN_LEN
+      // — an over-long token is a parse error that aborts the entire load, not a
+      // truncation, so this must stay under the limit.
+      static_assert(FLOOD_RETRY_BUCKET_PREFIXES * FLOOD_RETRY_PREFIX_LEN * 2 < CONFIG_MAX_TOKEN_LEN - 1,
                     "flood bucket blob exceeds ConfigSerializer token buffer");
+      // Keys are suffixed with a letter, not a digit: is_key_char() rejects
+      // digits, and an unparseable key aborts the whole load.
+      static_assert(FLOOD_RETRY_BRIDGE_BUCKETS <= 26,
+                    "bucket key suffix runs past 'z'");
       char key[8];
       for (uint8_t i = 0; i < FLOOD_RETRY_BRIDGE_BUCKETS; i++) {
-        sprintf(key, "b%u", (unsigned) i);
+        sprintf(key, "bkt_%c", (char) ('a' + i));
         def(key, (void *) _parent->flood_retry_bridge_buckets[i],
             sizeof(_parent->flood_retry_bridge_buckets[i]));
       }

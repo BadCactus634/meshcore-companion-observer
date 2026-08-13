@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - master
+      # the fork lives here, so its pushes need to run the tests too
+      - companion-observer
   pull_request:
   workflow_dispatch:
 
